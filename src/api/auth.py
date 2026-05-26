@@ -6,13 +6,13 @@ from typing import Optional
 
 import bcrypt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import JWTError, jwt
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api.database import get_db, async_session_factory
+from src.api.database import async_session_factory, get_db
 from src.api.db_models import User
 
 SECRET_KEY = os.getenv("JWT_SECRET", "websentinel-dev-secret-change-in-production")

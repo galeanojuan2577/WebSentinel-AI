@@ -3,8 +3,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from src.scanner.checks.headers import HeadersCheck, SECURITY_HEADERS
-from src.scanner.models import Severity
+from src.scanner.checks.headers import SECURITY_HEADERS, HeadersCheck
 
 
 @pytest.mark.asyncio
@@ -28,15 +27,18 @@ async def test_headers_check_all_present():
     check = HeadersCheck()
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, headers={
-            "Content-Security-Policy": "default-src 'self'",
-            "Strict-Transport-Security": "max-age=31536000",
-            "X-Frame-Options": "DENY",
-            "X-Content-Type-Options": "nosniff",
-            "Referrer-Policy": "strict-origin-when-cross-origin",
-            "Permissions-Policy": "camera=()",
-            "X-XSS-Protection": "1; mode=block",
-        })
+        return httpx.Response(
+            200,
+            headers={
+                "Content-Security-Policy": "default-src 'self'",
+                "Strict-Transport-Security": "max-age=31536000",
+                "X-Frame-Options": "DENY",
+                "X-Content-Type-Options": "nosniff",
+                "Referrer-Policy": "strict-origin-when-cross-origin",
+                "Permissions-Policy": "camera=()",
+                "X-XSS-Protection": "1; mode=block",
+            },
+        )
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     results = await check.run("https://example.com", client)
@@ -51,10 +53,13 @@ async def test_headers_check_server_info_disclosure():
     check = HeadersCheck()
 
     async def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, headers={
-            "Server": "Apache/2.4.41",
-            "X-Powered-By": "PHP/8.0",
-        })
+        return httpx.Response(
+            200,
+            headers={
+                "Server": "Apache/2.4.41",
+                "X-Powered-By": "PHP/8.0",
+            },
+        )
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     results = await check.run("https://example.com", client)

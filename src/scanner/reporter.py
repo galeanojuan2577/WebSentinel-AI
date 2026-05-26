@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
-from typing import Optional
 
 from src.scanner.models import ScanResult, Severity
 
@@ -37,16 +36,16 @@ class Reporter:
     def generate_markdown(self, result: ScanResult) -> str:
         lines: list[str] = [
             f"# VulnScout Report — {result.target.url}",
-            f"",
+            "",
             f"**Scan ID**: {result.scan_id}",
             f"**Started**: {result.started_at.isoformat()}",
             f"**Duration**: {result.duration_seconds:.1f}s" if result.duration_seconds else "**Duration**: N/A",
             f"**Status**: {result.status.value}",
             f"**URLs Scanned**: {result.total_urls_scanned}",
             f"**Total Findings**: {len(result.vulnerabilities)}",
-            f"",
+            "",
             "## Summary",
-            f"",
+            "",
             "| Severity | Count |",
             "|----------|-------|",
         ]
@@ -58,32 +57,38 @@ class Reporter:
         lines.extend(["", "## Findings", ""])
 
         for i, v in enumerate(result.vulnerabilities, 1):
-            lines.extend([
-                f"### {i}. [{v.severity.value.upper()}] {v.name}",
-                f"",
-                f"**URL**: {v.url}",
-                f"**Description**: {v.description}",
-                f"",
-                f"**Remediation**:",
-                f"```",
-                v.remediation,
-                f"```",
-                f"",
-            ])
+            lines.extend(
+                [
+                    f"### {i}. [{v.severity.value.upper()}] {v.name}",
+                    "",
+                    f"**URL**: {v.url}",
+                    f"**Description**: {v.description}",
+                    "",
+                    "**Remediation**:",
+                    "```",
+                    v.remediation,
+                    "```",
+                    "",
+                ]
+            )
             if v.evidence:
-                lines.extend([
-                    f"**Evidence**:",
-                    f"```",
-                    v.evidence,
-                    f"```",
-                    f"",
-                ])
+                lines.extend(
+                    [
+                        "**Evidence**:",
+                        "```",
+                        v.evidence,
+                        "```",
+                        "",
+                    ]
+                )
             if v.references:
-                lines.extend([
-                    f"**References**:",
-                    *[f"- {ref}" for ref in v.references],
-                    f"",
-                ])
+                lines.extend(
+                    [
+                        "**References**:",
+                        *[f"- {ref}" for ref in v.references],
+                        "",
+                    ]
+                )
 
         return "\n".join(lines)
 
@@ -102,9 +107,11 @@ class Reporter:
                 </div>"""
             refs_html = ""
             if v.references:
-                refs_html = "<div class='refs'><strong>References:</strong><ul>" + \
-                    "".join(f'<li><a href="{ref}" target="_blank">{ref}</a></li>' for ref in v.references) + \
-                    "</ul></div>"
+                refs_html = (
+                    "<div class='refs'><strong>References:</strong><ul>"
+                    + "".join(f'<li><a href="{ref}" target="_blank">{ref}</a></li>' for ref in v.references)
+                    + "</ul></div>"
+                )
 
             findings_rows += f"""
             <div class="finding" style="border-left: 4px solid {color}; padding: 16px; margin: 12px 0; background: #f9fafb; border-radius: 4px;">
@@ -159,7 +166,7 @@ class Reporter:
             <div class="meta">
                 <p><strong>Target:</strong> {self._escape(result.target.url)}</p>
                 <p><strong>Scan ID:</strong> {self._escape(result.scan_id)}</p>
-                <p><strong>Date:</strong> {result.started_at.strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p><strong>Date:</strong> {result.started_at.strftime("%Y-%m-%d %H:%M:%S")}</p>
                 <p><strong>Duration:</strong> {result.duration_seconds:.1f}s</p>
                 <p><strong>Findings:</strong> {len(result.vulnerabilities)}</p>
             </div>
@@ -169,11 +176,11 @@ class Reporter:
             <h2>Summary</h2>
             <table>
                 <tr><th>Severity</th><th>Count</th></tr>
-                <tr><td style="color: #dc2626; font-weight: 600;">Critical</td><td>{summary['critical']}</td></tr>
-                <tr><td style="color: #ea580c; font-weight: 600;">High</td><td>{summary['high']}</td></tr>
-                <tr><td style="color: #ca8a04; font-weight: 600;">Medium</td><td>{summary['medium']}</td></tr>
-                <tr><td style="color: #2563eb; font-weight: 600;">Low</td><td>{summary['low']}</td></tr>
-                <tr><td style="color: #6b7280; font-weight: 600;">Info</td><td>{summary['info']}</td></tr>
+                <tr><td style="color: #dc2626; font-weight: 600;">Critical</td><td>{summary["critical"]}</td></tr>
+                <tr><td style="color: #ea580c; font-weight: 600;">High</td><td>{summary["high"]}</td></tr>
+                <tr><td style="color: #ca8a04; font-weight: 600;">Medium</td><td>{summary["medium"]}</td></tr>
+                <tr><td style="color: #2563eb; font-weight: 600;">Low</td><td>{summary["low"]}</td></tr>
+                <tr><td style="color: #6b7280; font-weight: 600;">Info</td><td>{summary["info"]}</td></tr>
             </table>
         </div>
 
@@ -183,7 +190,7 @@ class Reporter:
         </div>
 
         <div class="footer">
-            <p>Generated by VulnScout — {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+            <p>Generated by VulnScout — {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p>
         </div>
     </div>
 </body>

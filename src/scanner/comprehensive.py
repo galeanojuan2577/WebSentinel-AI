@@ -16,10 +16,10 @@ async def run_comprehensive_scan(
     include_dns: bool = True,
     progress_callback: Optional[callable] = None,
 ) -> dict[str, Any]:
-    from src.scanner.checks.tech import TechDetectCheck
-    from src.scanner.checks.subdomains import SubdomainCheck
     from src.scanner.checks.cve import CVECheck
     from src.scanner.checks.dns import DNSCheck
+    from src.scanner.checks.subdomains import SubdomainCheck
+    from src.scanner.checks.tech import TechDetectCheck
 
     base_url = url.rstrip("/")
     results: list = []

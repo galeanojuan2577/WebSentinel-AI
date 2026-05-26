@@ -4,7 +4,6 @@ import httpx
 import pytest
 
 from src.scanner.checks.cookies import CookiesCheck
-from http.cookies import SimpleCookie
 
 
 @pytest.mark.asyncio

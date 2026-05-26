@@ -9,8 +9,19 @@ from src.scanner.checks.base import BaseCheck
 from src.scanner.models import CheckResult, Severity
 
 COMMON_WEB_PORTS = [
-    80, 443, 8080, 8443, 3000, 5000, 8000,
-    8008, 8888, 9000, 9090, 9443, 10443,
+    80,
+    443,
+    8080,
+    8443,
+    3000,
+    5000,
+    8000,
+    8008,
+    8888,
+    9000,
+    9090,
+    9443,
+    10443,
 ]
 
 PORT_SERVICES = {
@@ -39,13 +50,15 @@ class PortsCheck(BaseCheck):
         hostname = urlparse(url).hostname
 
         if not hostname:
-            return [CheckResult(
-                name="Invalid Hostname",
-                description=f"No se pudo extraer el hostname de la URL: {url}",
-                severity=Severity.INFO,
-                url=url,
-                remediation="Verificar que la URL sea válida.",
-            )]
+            return [
+                CheckResult(
+                    name="Invalid Hostname",
+                    description=f"No se pudo extraer el hostname de la URL: {url}",
+                    severity=Severity.INFO,
+                    url=url,
+                    remediation="Verificar que la URL sea válida.",
+                )
+            ]
 
         async def check_port(port: int) -> tuple[int, bool]:
             try:
@@ -68,33 +81,41 @@ class PortsCheck(BaseCheck):
 
         if extra_ports:
             for port, service in extra_ports:
-                results.append(CheckResult(
-                    name=f"Open Port: {port} ({service})",
-                    description=f"El puerto {port} ({service}) está abierto en {hostname}. "
-                                "Puertos adicionales incrementan la superficie de ataque.",
-                    severity=Severity.MEDIUM,
-                    url=f"{hostname}:{port}",
-                    evidence=f"Port: {port}, Service: {service}",
-                    remediation="1. Cerrar puertos no necesarios en el firewall.\n"
-                                "2. Si el servicio es necesario, asegurarse de que esté correctamente configurado.\n"
-                                "3. Usar autenticación y cifrado en todos los servicios expuestos.",
-                    references=["https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/"],
-                ))
+                results.append(
+                    CheckResult(
+                        name=f"Open Port: {port} ({service})",
+                        description=f"El puerto {port} ({service}) está abierto en {hostname}. "
+                        "Puertos adicionales incrementan la superficie de ataque.",
+                        severity=Severity.MEDIUM,
+                        url=f"{hostname}:{port}",
+                        evidence=f"Port: {port}, Service: {service}",
+                        remediation="1. Cerrar puertos no necesarios en el firewall.\n"
+                        "2. Si el servicio es necesario, asegurarse de que esté correctamente configurado.\n"
+                        "3. Usar autenticación y cifrado en todos los servicios expuestos.",
+                        references=[
+                            "https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/"
+                        ],
+                    )
+                )
         elif len(open_ports) == 0:
-            results.append(CheckResult(
-                name="No Open Web Ports",
-                description=f"No se detectaron puertos web abiertos en {hostname}. Verifica la conectividad.",
-                severity=Severity.INFO,
-                url=url,
-                remediation="Verificar que el servidor esté funcionando y sea accesible.",
-            ))
+            results.append(
+                CheckResult(
+                    name="No Open Web Ports",
+                    description=f"No se detectaron puertos web abiertos en {hostname}. Verifica la conectividad.",
+                    severity=Severity.INFO,
+                    url=url,
+                    remediation="Verificar que el servidor esté funcionando y sea accesible.",
+                )
+            )
         else:
-            results.append(CheckResult(
-                name="Standard Ports Only",
-                description=f"Solo los puertos estándar (80, 443) están abiertos en {hostname}.",
-                severity=Severity.INFO,
-                url=url,
-                remediation="N/A — solo puertos estándar expuestos.",
-            ))
+            results.append(
+                CheckResult(
+                    name="Standard Ports Only",
+                    description=f"Solo los puertos estándar (80, 443) están abiertos en {hostname}.",
+                    severity=Severity.INFO,
+                    url=url,
+                    remediation="N/A — solo puertos estándar expuestos.",
+                )
+            )
 
         return results

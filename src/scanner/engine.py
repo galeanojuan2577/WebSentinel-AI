@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 from datetime import datetime
 from typing import Optional
@@ -8,14 +7,14 @@ from typing import Optional
 import httpx
 
 from src.scanner.checks.base import BaseCheck
-from src.scanner.checks.headers import HeadersCheck
-from src.scanner.checks.ssl import SSLCheck
-from src.scanner.checks.xss import XSSCheck
-from src.scanner.checks.sqli import SQLICheck
-from src.scanner.checks.directories import DirectoriesCheck
 from src.scanner.checks.cookies import CookiesCheck
+from src.scanner.checks.directories import DirectoriesCheck
+from src.scanner.checks.headers import HeadersCheck
+from src.scanner.checks.sqli import SQLICheck
+from src.scanner.checks.ssl import SSLCheck
 from src.scanner.checks.tech import TechDetectCheck
-from src.scanner.models import ScanResult, ScanTarget, ScanStatus
+from src.scanner.checks.xss import XSSCheck
+from src.scanner.models import ScanResult, ScanStatus, ScanTarget
 
 logger = logging.getLogger("websentinel.engine")
 
@@ -31,12 +30,14 @@ _DEFAULT_CHECKS: list[type[BaseCheck]] = [
 
 try:
     from src.scanner.checks.dns import DNSCheck
+
     _DEFAULT_CHECKS.append(DNSCheck)
 except ImportError:
     pass
 
 try:
     from src.scanner.checks.wifi import WiFiScanCheck
+
     _DEFAULT_CHECKS.append(WiFiScanCheck)
 except Exception:
     pass
@@ -76,10 +77,7 @@ class ScanEngine:
         ) as client:
             check_instances = [cls() for cls in self._check_classes]
 
-            selected = [
-                c for c in check_instances
-                if "all" in target.checks or c.name in target.checks
-            ]
+            selected = [c for c in check_instances if "all" in target.checks or c.name in target.checks]
 
             if not selected:
                 result.status = ScanStatus.FAILED
@@ -97,29 +95,31 @@ class ScanEngine:
                 except Exception as exc:
                     logger.error("Check %s failed: %s", check.name, exc, exc_info=True)
                     from src.scanner.models import CheckResult, Severity
-                    result.vulnerabilities.append(CheckResult(
-                        name=f"Check Error: {check.name}",
-                        description=f"El check '{check.name}' falló con error: {exc}",
-                        severity=Severity.INFO,
-                        url=target.url,
-                        remediation="Revisar los logs para más detalles.",
-                    ))
+
+                    result.vulnerabilities.append(
+                        CheckResult(
+                            name=f"Check Error: {check.name}",
+                            description=f"El check '{check.name}' falló con error: {exc}",
+                            severity=Severity.INFO,
+                            url=target.url,
+                            remediation="Revisar los logs para más detalles.",
+                        )
+                    )
 
         result.status = ScanStatus.COMPLETED
         result.finished_at = datetime.now()
 
         result.vulnerabilities.sort(
-            key=lambda v: (
-                {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}.get(
-                    v.severity.value, 5
-                )
-            )
+            key=lambda v: {
+                "critical": 0,
+                "high": 1,
+                "medium": 2,
+                "low": 3,
+                "info": 4,
+            }.get(v.severity.value, 5)
         )
 
         return result
 
     def list_checks(self) -> list[dict[str, str]]:
-        return [
-            {"name": cls.name, "description": cls.description}
-            for cls in self._check_classes
-        ]
+        return [{"name": cls.name, "description": cls.description} for cls in self._check_classes]

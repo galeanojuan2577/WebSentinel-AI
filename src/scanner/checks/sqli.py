@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
 
@@ -9,9 +9,9 @@ from src.scanner.models import CheckResult, Severity
 
 SQLI_PAYLOADS = [
     "'",
-    "\"",
+    '"',
     "' OR '1'='1",
-    "\" OR \"1\"=\"1",
+    '" OR "1"="1',
     "' OR 1=1--",
     "' UNION SELECT NULL--",
     "' AND 1=1--",
@@ -62,36 +62,40 @@ class SQLICheck(BaseCheck):
 
                     for pattern in ERROR_PATTERNS:
                         if pattern in body_lower:
-                            results.append(CheckResult(
-                                name="Potential SQL Injection",
-                                description=f"El parámetro '{param_name}' parece vulnerable a SQL Injection. "
-                                            f"El servidor expone errores de base de datos.",
-                                severity=Severity.HIGH,
-                                url=test_url,
-                                evidence=f"Payload: {payload}\nError pattern matched: {pattern}",
-                                remediation="1. Usar consultas parametrizadas (prepared statements).\n"
-                                            "2. Validar y sanitizar todos los inputs.\n"
-                                            "3. Usar un ORM que escape automáticamente (SQLAlchemy, Django ORM).\n"
-                                            "4. Configurar el manejador de errores de la BD para no exponer detalles.",
-                                references=[
-                                    "https://owasp.org/www-community/attacks/SQL_Injection",
-                                    "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
-                                ],
-                            ))
+                            results.append(
+                                CheckResult(
+                                    name="Potential SQL Injection",
+                                    description=f"El parámetro '{param_name}' parece vulnerable a SQL Injection. "
+                                    f"El servidor expone errores de base de datos.",
+                                    severity=Severity.HIGH,
+                                    url=test_url,
+                                    evidence=f"Payload: {payload}\nError pattern matched: {pattern}",
+                                    remediation="1. Usar consultas parametrizadas (prepared statements).\n"
+                                    "2. Validar y sanitizar todos los inputs.\n"
+                                    "3. Usar un ORM que escape automáticamente (SQLAlchemy, Django ORM).\n"
+                                    "4. Configurar el manejador de errores de la BD para no exponer detalles.",
+                                    references=[
+                                        "https://owasp.org/www-community/attacks/SQL_Injection",
+                                        "https://cheatsheetseries.owasp.org/cheatsheets/SQL_Injection_Prevention_Cheat_Sheet.html",
+                                    ],
+                                )
+                            )
                             break
 
                     if test_resp.status_code != base_resp.status_code and test_resp.status_code in (500, 404, 403):
-                        results.append(CheckResult(
-                            name="Potential SQL Injection (Behavior Change)",
-                            description=f"El parámetro '{param_name}' causa un cambio de comportamiento "
-                                        f"(status {base_resp.status_code} → {test_resp.status_code}) "
-                                        f"que sugiere una posible inyección SQL.",
-                            severity=Severity.MEDIUM,
-                            url=test_url,
-                            evidence=f"Payload: {payload}\nStatus change: {base_resp.status_code} → {test_resp.status_code}",
-                            remediation="Revisar el parámetro manualmente con herramientas especializadas como sqlmap.",
-                            references=["https://sqlmap.org/"],
-                        ))
+                        results.append(
+                            CheckResult(
+                                name="Potential SQL Injection (Behavior Change)",
+                                description=f"El parámetro '{param_name}' causa un cambio de comportamiento "
+                                f"(status {base_resp.status_code} → {test_resp.status_code}) "
+                                f"que sugiere una posible inyección SQL.",
+                                severity=Severity.MEDIUM,
+                                url=test_url,
+                                evidence=f"Payload: {payload}\nStatus change: {base_resp.status_code} → {test_resp.status_code}",
+                                remediation="Revisar el parámetro manualmente con herramientas especializadas como sqlmap.",
+                                references=["https://sqlmap.org/"],
+                            )
+                        )
                 except (httpx.TimeoutException, httpx.RequestError):
                     continue
                 break

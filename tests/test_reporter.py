@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.scanner.models import ScanResult, ScanTarget, ScanStatus, Severity, CheckResult
+from src.scanner.models import CheckResult, ScanResult, ScanStatus, ScanTarget, Severity
 from src.scanner.reporter import Reporter
 
 
@@ -38,6 +38,7 @@ def test_reporter_escape():
 
 def _make_sample_result() -> ScanResult:
     from datetime import datetime, timedelta
+
     return ScanResult(
         scan_id="test-001",
         target=ScanTarget(url="https://example.com"),

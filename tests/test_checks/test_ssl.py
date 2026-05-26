@@ -4,7 +4,6 @@ import httpx
 import pytest
 
 from src.scanner.checks.ssl import SSLCheck
-from src.scanner.models import CheckResult
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Optional
 
 import httpx
 
@@ -18,27 +17,49 @@ class TechDetectCheck(BaseCheck):
 
     HEADER_SIGNATURES = {
         "server": {
-            "nginx": "Nginx", "apache": "Apache HTTP Server",
-            "cloudflare": "Cloudflare", "iis": "Microsoft IIS",
-            "caddy": "Caddy", "openresty": "OpenResty",
-            "gunicorn": "Gunicorn", "uvicorn": "Uvicorn",
+            "nginx": "Nginx",
+            "apache": "Apache HTTP Server",
+            "cloudflare": "Cloudflare",
+            "iis": "Microsoft IIS",
+            "caddy": "Caddy",
+            "openresty": "OpenResty",
+            "gunicorn": "Gunicorn",
+            "uvicorn": "Uvicorn",
         },
         "x-powered-by": {
-            "php": "PHP", "express": "Express.js", "asp.net": "ASP.NET",
-            "rails": "Ruby on Rails", "django": "Django", "flask": "Flask",
-            "fastapi": "FastAPI", "laravel": "Laravel", "symfony": "Symfony",
+            "php": "PHP",
+            "express": "Express.js",
+            "asp.net": "ASP.NET",
+            "rails": "Ruby on Rails",
+            "django": "Django",
+            "flask": "Flask",
+            "fastapi": "FastAPI",
+            "laravel": "Laravel",
+            "symfony": "Symfony",
         },
         "x-generator": {
-            "wordpress": "WordPress", "drupal": "Drupal", "joomla": "Joomla",
+            "wordpress": "WordPress",
+            "drupal": "Drupal",
+            "joomla": "Joomla",
         },
     }
 
     HTML_SIGNATURES = {
-        "react": "React", "vue": "Vue.js", "angular": "Angular",
-        "svelte": "Svelte", "next.js": "Next.js", "nuxt": "Nuxt.js",
-        "jquery": "jQuery", "bootstrap": "Bootstrap", "tailwindcss": "Tailwind CSS",
-        "django": "Django", "laravel": "Laravel", "wordpress": "WordPress",
-        "shopify": "Shopify", "vite": "Vite", "webpack": "Webpack",
+        "react": "React",
+        "vue": "Vue.js",
+        "angular": "Angular",
+        "svelte": "Svelte",
+        "next.js": "Next.js",
+        "nuxt": "Nuxt.js",
+        "jquery": "jQuery",
+        "bootstrap": "Bootstrap",
+        "tailwindcss": "Tailwind CSS",
+        "django": "Django",
+        "laravel": "Laravel",
+        "wordpress": "WordPress",
+        "shopify": "Shopify",
+        "vite": "Vite",
+        "webpack": "Webpack",
     }
 
     ENDPOINT_PATTERNS = [
@@ -49,8 +70,16 @@ class TechDetectCheck(BaseCheck):
     ]
 
     API_PATTERNS = [
-        "/api", "/api/v1", "/api/v2", "/graphql", "/swagger.json",
-        "/api/docs", "/docs", "/health", "/.env", "/admin",
+        "/api",
+        "/api/v1",
+        "/api/v2",
+        "/graphql",
+        "/swagger.json",
+        "/api/docs",
+        "/docs",
+        "/health",
+        "/.env",
+        "/admin",
     ]
 
     async def run(self, url: str, client: httpx.AsyncClient) -> list[CheckResult]:
@@ -77,29 +106,33 @@ class TechDetectCheck(BaseCheck):
             logger.debug(f"Tech detection HTTP failed: {e}")
 
         for tech, source in sorted(technologies.items()):
-            results.append(CheckResult(
-                name=f"Technology: {tech}",
-                description=f"Tecnología detectada en {url} via {source}.",
-                severity=Severity.INFO,
-                url=url,
-                evidence=f"Technology: {tech}\nSource: {source}",
-                remediation=f"Mantener {tech} actualizado siguiendo las mejores prácticas de seguridad.",
-                references=[],
-            ))
+            results.append(
+                CheckResult(
+                    name=f"Technology: {tech}",
+                    description=f"Tecnología detectada en {url} via {source}.",
+                    severity=Severity.INFO,
+                    url=url,
+                    evidence=f"Technology: {tech}\nSource: {source}",
+                    remediation=f"Mantener {tech} actualizado siguiendo las mejores prácticas de seguridad.",
+                    references=[],
+                )
+            )
 
         ep_results = await self._check_endpoints(base_url, client)
         results.extend(ep_results)
 
         if not technologies and not ep_results:
-            results.append(CheckResult(
-                name="Technology Detection",
-                description="No se detectaron tecnologías conocidas. El sitio puede usar un stack personalizado o estar protegido por WAF/CDN.",
-                severity=Severity.INFO,
-                url=url,
-                evidence="Ninguna firma reconocida en headers o HTML.",
-                remediation="Verificar tecnologías manualmente.",
-                references=[],
-            ))
+            results.append(
+                CheckResult(
+                    name="Technology Detection",
+                    description="No se detectaron tecnologías conocidas. El sitio puede usar un stack personalizado o estar protegido por WAF/CDN.",
+                    severity=Severity.INFO,
+                    url=url,
+                    evidence="Ninguna firma reconocida en headers o HTML.",
+                    remediation="Verificar tecnologías manualmente.",
+                    references=[],
+                )
+            )
 
         return results
 
@@ -117,23 +150,27 @@ class TechDetectCheck(BaseCheck):
                     body = resp.text.strip()
                     if not body or len(body) < 10:
                         return None
-                    if resp.status_code in (401, 403) and ("unauthorized" in body.lower() or "forbidden" in body.lower() or len(body) < 50):
+                    if resp.status_code in (401, 403) and (
+                        "unauthorized" in body.lower() or "forbidden" in body.lower() or len(body) < 50
+                    ):
                         return None
                     return CheckResult(
                         name=f"Endpoint: {path}",
                         description=(
                             f"Endpoint encontrado: {desc} (HTTP {resp.status_code}). "
-                            + ("Posible shadow API — verificar si está documentado y autenticado."
-                               if sensitive else
-                               "Endpoint público accesible.")
+                            + (
+                                "Posible shadow API — verificar si está documentado y autenticado."
+                                if sensitive
+                                else "Endpoint público accesible."
+                            )
                         ),
                         severity=Severity.MEDIUM if sensitive else Severity.LOW,
                         url=url,
                         evidence=f"Endpoint: {path}\nStatus: {resp.status_code}\nContent-Type: {resp.headers.get('content-type', 'N/A')}\nResponse size: {len(body)} bytes",
                         remediation=(
                             "Asegurar autenticación y rate-limiting. Verificar que no exponga datos sensibles."
-                            if sensitive else
-                            "Endpoint documentado. Revisar configuración de seguridad periódicamente."
+                            if sensitive
+                            else "Endpoint documentado. Revisar configuración de seguridad periódicamente."
                         ),
                         references=[],
                     )

@@ -18,12 +18,48 @@ class SubdomainCheck(BaseCheck):
     description = "Descubre subdominios vía crt.sh y verifica resolución DNS antes de reportar"
 
     COMMON_SUBDOMAINS = [
-        "www", "mail", "admin", "api", "dev", "staging", "test", "beta", "app",
-        "portal", "login", "sso", "auth", "cdn", "blog", "shop", "docs", "help",
-        "support", "status", "git", "jenkins", "jira", "dashboard", "console",
-        "monitor", "backup", "vpn", "remote", "webmail", "owa", "m",
-        "mobile", "graphql", "ws", "socket", "static", "assets", "uploads",
-        "analytics", "tracking", "logs",
+        "www",
+        "mail",
+        "admin",
+        "api",
+        "dev",
+        "staging",
+        "test",
+        "beta",
+        "app",
+        "portal",
+        "login",
+        "sso",
+        "auth",
+        "cdn",
+        "blog",
+        "shop",
+        "docs",
+        "help",
+        "support",
+        "status",
+        "git",
+        "jenkins",
+        "jira",
+        "dashboard",
+        "console",
+        "monitor",
+        "backup",
+        "vpn",
+        "remote",
+        "webmail",
+        "owa",
+        "m",
+        "mobile",
+        "graphql",
+        "ws",
+        "socket",
+        "static",
+        "assets",
+        "uploads",
+        "analytics",
+        "tracking",
+        "logs",
     ]
 
     def __init__(self, wordlist: Optional[list[str]] = None):
@@ -52,41 +88,60 @@ class SubdomainCheck(BaseCheck):
 
         for subdomain, ip in sorted(candidates.items()):
             fqdn = f"{subdomain}.{domain}"
-            is_shadow = any(k in subdomain for k in
-                ["admin", "dev", "staging", "test", "internal", "jenkins",
-                 "jira", "dashboard", "console", "phpmyadmin", "backup",
-                 "git", "vpn", "remote"])
-            results.append(CheckResult(
-                name=f"Subdomain: {fqdn}",
-                description=(
-                    f"Subdominio verificable: {fqdn} (IP: {ip}). "
-                    f"Endpoint no documentado — verificar propiedad y propósito."
-                    if is_shadow else
-                    f"Subdominio público detectado: {fqdn}."
-                ),
-                severity=Severity.MEDIUM if is_shadow else Severity.INFO,
-                url=f"https://{fqdn}",
-                evidence=f"Subdomain: {fqdn}\nResolved IP: {ip}\n{'Posible shadow resource — requiere investigación manual.' if is_shadow else 'Subdominio activo.'}",
-                remediation=(
-                    "1. Verificar si el subdominio está autorizado.\n"
-                    "2. Asegurar misma postura de seguridad que el dominio principal.\n"
-                    "3. Dar de baja si no está en uso."
-                    if is_shadow else
-                    "No requiere acción inmediata. Monitorear periódicamente."
-                ),
-                references=["https://crt.sh/"],
-            ))
+            is_shadow = any(
+                k in subdomain
+                for k in [
+                    "admin",
+                    "dev",
+                    "staging",
+                    "test",
+                    "internal",
+                    "jenkins",
+                    "jira",
+                    "dashboard",
+                    "console",
+                    "phpmyadmin",
+                    "backup",
+                    "git",
+                    "vpn",
+                    "remote",
+                ]
+            )
+            results.append(
+                CheckResult(
+                    name=f"Subdomain: {fqdn}",
+                    description=(
+                        f"Subdominio verificable: {fqdn} (IP: {ip}). "
+                        f"Endpoint no documentado — verificar propiedad y propósito."
+                        if is_shadow
+                        else f"Subdominio público detectado: {fqdn}."
+                    ),
+                    severity=Severity.MEDIUM if is_shadow else Severity.INFO,
+                    url=f"https://{fqdn}",
+                    evidence=f"Subdomain: {fqdn}\nResolved IP: {ip}\n{'Posible shadow resource — requiere investigación manual.' if is_shadow else 'Subdominio activo.'}",
+                    remediation=(
+                        "1. Verificar si el subdominio está autorizado.\n"
+                        "2. Asegurar misma postura de seguridad que el dominio principal.\n"
+                        "3. Dar de baja si no está en uso."
+                        if is_shadow
+                        else "No requiere acción inmediata. Monitorear periódicamente."
+                    ),
+                    references=["https://crt.sh/"],
+                )
+            )
 
         if not results:
-            results.append(CheckResult(
-                name=f"Subdomain Discovery: {domain}",
-                description=f"No se encontraron subdominios verificables para {domain}.",
-                severity=Severity.INFO,
-                url=url,
-                evidence=f"Domain: {domain}",
-                remediation="Monitoreo periódico recomendado.",
-                references=[],
-            ))
+            results.append(
+                CheckResult(
+                    name=f"Subdomain Discovery: {domain}",
+                    description=f"No se encontraron subdominios verificables para {domain}.",
+                    severity=Severity.INFO,
+                    url=url,
+                    evidence=f"Domain: {domain}",
+                    remediation="Monitoreo periódico recomendado.",
+                    references=[],
+                )
+            )
 
         return results
 

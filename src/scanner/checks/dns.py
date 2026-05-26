@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
-from typing import Optional
 
 import httpx
 
@@ -20,7 +19,8 @@ class DNSCheck(BaseCheck):
     def __init__(self):
         self._has_dnspython: bool = False
         try:
-            import dns.resolver
+            import dns.resolver  # noqa: F401
+
             self._has_dnspython = True
         except ImportError:
             pass
@@ -33,15 +33,17 @@ class DNSCheck(BaseCheck):
 
         a_records = await self._resolve_a(domain)
         if a_records:
-            results.append(CheckResult(
-                name=f"DNS A: {domain}",
-                description=f"Registro A encontrado: {', '.join(a_records[:3])}.",
-                severity=Severity.INFO,
-                url=f"dns://{domain}",
-                evidence=f"Domain: {domain}\nA records: {', '.join(a_records[:5])}",
-                remediation="No requiere acción. Registro DNS estándar.",
-                references=[],
-            ))
+            results.append(
+                CheckResult(
+                    name=f"DNS A: {domain}",
+                    description=f"Registro A encontrado: {', '.join(a_records[:3])}.",
+                    severity=Severity.INFO,
+                    url=f"dns://{domain}",
+                    evidence=f"Domain: {domain}\nA records: {', '.join(a_records[:5])}",
+                    remediation="No requiere acción. Registro DNS estándar.",
+                    references=[],
+                )
+            )
 
         if self._has_dnspython:
             advanced = await self._resolve_advanced(domain)
@@ -49,35 +51,41 @@ class DNSCheck(BaseCheck):
                 if not values:
                     continue
                 sensitive = rectype in ("MX", "NS", "TXT")
-                results.append(CheckResult(
-                    name=f"DNS {rectype}: {domain}",
-                    description=(
-                        f"Registro {rectype} encontrado. "
-                        + ("Puede exponer información de infraestructura de correo o nombres."
-                           if sensitive else
-                           "Registro DNS estándar.")
-                    ),
-                    severity=Severity.INFO,
-                    url=f"dns://{domain}",
-                    evidence=f"Record type: {rectype}\nValues:\n" + "\n".join(values[:3]),
-                    remediation=(
-                        "Evaluar si los registros MX/NS deben ser públicos u ocultos tras split-horizon DNS."
-                        if sensitive else
-                        "No requiere acción."
-                    ),
-                    references=[],
-                ))
+                results.append(
+                    CheckResult(
+                        name=f"DNS {rectype}: {domain}",
+                        description=(
+                            f"Registro {rectype} encontrado. "
+                            + (
+                                "Puede exponer información de infraestructura de correo o nombres."
+                                if sensitive
+                                else "Registro DNS estándar."
+                            )
+                        ),
+                        severity=Severity.INFO,
+                        url=f"dns://{domain}",
+                        evidence=f"Record type: {rectype}\nValues:\n" + "\n".join(values[:3]),
+                        remediation=(
+                            "Evaluar si los registros MX/NS deben ser públicos u ocultos tras split-horizon DNS."
+                            if sensitive
+                            else "No requiere acción."
+                        ),
+                        references=[],
+                    )
+                )
 
         if not results:
-            results.append(CheckResult(
-                name=f"DNS Resolution: {domain}",
-                description=f"No se pudieron resolver registros DNS para {domain}. El dominio no es accesible o no existe.",
-                severity=Severity.INFO,
-                url=f"dns://{domain}",
-                evidence=f"Domain: {domain}",
-                remediation="Verificar que el dominio esté correctamente configurado en el DNS.",
-                references=[],
-            ))
+            results.append(
+                CheckResult(
+                    name=f"DNS Resolution: {domain}",
+                    description=f"No se pudieron resolver registros DNS para {domain}. El dominio no es accesible o no existe.",
+                    severity=Severity.INFO,
+                    url=f"dns://{domain}",
+                    evidence=f"Domain: {domain}",
+                    remediation="Verificar que el dominio esté correctamente configurado en el DNS.",
+                    references=[],
+                )
+            )
 
         return results
 
@@ -101,6 +109,7 @@ class DNSCheck(BaseCheck):
 
     async def _resolve_advanced(self, domain: str) -> dict[str, list[str]]:
         import dns.resolver
+
         result = {}
         for rectype in ("MX", "NS", "TXT", "AAAA", "CNAME"):
             try:

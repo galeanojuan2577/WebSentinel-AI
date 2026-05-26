@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import uuid
 import zipfile
 from contextlib import asynccontextmanager
@@ -11,25 +10,49 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, APIRouter, UploadFile, File, Depends, Query
+from fastapi import (
+    APIRouter,
+    Depends,
+    FastAPI,
+    File,
+    HTTPException,
+    Query,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.ai.chat import AIChatService, ChatRequest
+from src.ai.enricher import AIEnricher
+from src.api.auth import (
+    LoginRequest,
+    TokenResponse,
+    create_access_token,
+    ensure_default_user,
+    get_current_user,
+    verify_password,
+)
+from src.api.database import async_session_factory, get_db, init_db
+from src.api.db_models import Finding as DBFinding
+from src.api.db_models import Scan as DBScan
+from src.api.db_models import User as DBUser
+from src.orchestrator.pipeline import (
+    PipelineRequest,
+    PipelineState,
+    StepResult,
+    _build_default_pipeline,
+    get_pipeline,
+    list_pipelines,
+    run_pipeline,
+)
 from src.scanner.engine import ScanEngine
 from src.scanner.models import ScanTarget, Severity
 from src.scanner.noir import NoirScanner
-from src.api.database import init_db, get_db, async_session_factory
-from src.api.db_models import User as DBUser, Scan as DBScan, Finding as DBFinding
-from src.api.auth import (
-    LoginRequest, TokenResponse, create_access_token, verify_password,
-    ensure_default_user, get_current_user, require_user,
-)
-from src.ai.enricher import AIEnricher
-from src.ai.chat import ChatRequest, AIChatService
-from src.orchestrator.pipeline import run_pipeline, get_pipeline, list_pipelines, PipelineRequest, PipelineState, StepResult, _build_default_pipeline
 
 logger = logging.getLogger("websentinel.api")
 
@@ -52,23 +75,39 @@ async def _broadcast(message: dict):
 
 def _noir_progress_cb(scan_id: str, loop: asyncio.AbstractEventLoop):
     def cb(percent: int, msg: str):
-        asyncio.run_coroutine_threadsafe(_broadcast({
-            "type": "noir_progress",
-            "scan_id": scan_id,
-            "percent": percent,
-            "message": msg,
-        }), loop)
+        asyncio.run_coroutine_threadsafe(
+            _broadcast(
+                {
+                    "type": "noir_progress",
+                    "scan_id": scan_id,
+                    "percent": percent,
+                    "message": msg,
+                }
+            ),
+            loop,
+        )
+
     return cb
 
 
-async def _save_scan_to_db(scan_id: str, scan_type: str, target: str, status: str,
-                           findings: list | None = None, error: str | None = None):
+async def _save_scan_to_db(
+    scan_id: str,
+    scan_type: str,
+    target: str,
+    status: str,
+    findings: list | None = None,
+    error: str | None = None,
+):
     try:
         async with async_session_factory() as session:
             db_scan = DBScan(
-                id=scan_id, scan_type=scan_type, target=target,
-                status=status, finished_at=datetime.now(),
-                error=error, total_findings=len(findings) if findings else 0,
+                id=scan_id,
+                scan_type=scan_type,
+                target=target,
+                status=status,
+                finished_at=datetime.now(),
+                error=error,
+                total_findings=len(findings) if findings else 0,
             )
             if findings:
                 sev_counts: dict[str, int] = {s.value: 0 for s in Severity}
@@ -77,16 +116,18 @@ async def _save_scan_to_db(scan_id: str, scan_type: str, target: str, status: st
                     sev_counts[sev] = sev_counts.get(sev, 0) + 1
                 db_scan.severity_summary = sev_counts
                 for f in findings:
-                    db_scan.findings.append(DBFinding(
-                        name=f.get("name", "Unknown"),
-                        description=f.get("description", ""),
-                        severity=f.get("severity", "info"),
-                        url=f.get("url", target),
-                        evidence=f.get("evidence"),
-                        remediation=f.get("remediation", ""),
-                        references=f.get("references", []),
-                        source=f.get("source", scan_type),
-                    ))
+                    db_scan.findings.append(
+                        DBFinding(
+                            name=f.get("name", "Unknown"),
+                            description=f.get("description", ""),
+                            severity=f.get("severity", "info"),
+                            url=f.get("url", target),
+                            evidence=f.get("evidence"),
+                            remediation=f.get("remediation", ""),
+                            references=f.get("references", []),
+                            source=f.get("source", scan_type),
+                        )
+                    )
             session.add(db_scan)
             await session.commit()
     except Exception as e:
@@ -98,10 +139,13 @@ async def _save_pipeline_to_db(pipeline_id: str, state):
         for s in state.steps:
             if s.status != "completed" or not s.result:
                 continue
-            findings = s.result.get("findings", s.result.get("vulnerabilities", s.result.get("enriched_findings", [])))
+            findings = s.result.get(
+                "findings",
+                s.result.get("vulnerabilities", s.result.get("enriched_findings", [])),
+            )
             if not findings:
                 continue
-            scan_type = s.step_type.value if hasattr(s.step_type, 'value') else str(s.step_type)
+            scan_type = s.step_type.value if hasattr(s.step_type, "value") else str(s.step_type)
             await _save_scan_to_db(
                 scan_id=f"{pipeline_id}_{s.step_id.split('_')[-1]}" if "_" in s.step_id else pipeline_id,
                 scan_type=f"pipeline_{scan_type}",
@@ -126,7 +170,11 @@ async def _run_scan_task(scan_id: str, target: ScanTarget):
         asyncio.create_task(_save_scan_to_db(scan_id, "web", target.url, "completed", findings=vs))
     except Exception as exc:
         logger.error("Scan %s failed: %s", scan_id, exc)
-        scan_results[scan_id] = {"status": "failed", "error": str(exc), "target": {"url": target.url}}
+        scan_results[scan_id] = {
+            "status": "failed",
+            "error": str(exc),
+            "target": {"url": target.url},
+        }
         await _broadcast({"type": "scan_failed", "scan_id": scan_id, "error": str(exc)})
         asyncio.create_task(_save_scan_to_db(scan_id, "web", target.url, "failed", error=str(exc)))
     finally:
@@ -164,6 +212,7 @@ api = APIRouter(prefix="/api")
 
 # ── Models ─────────────────────────────────────────────────────────────────
 
+
 class ScanRequest(BaseModel):
     url: str
     checks: list[str] = ["all"]
@@ -197,12 +246,14 @@ class ScanResponse(BaseModel):
 
 # ── Health ──────────────────────────────────────────────────────────────────
 
+
 @api.get("/health")
 async def health():
     return {"status": "ok", "version": "0.3.0"}
 
 
 # ── Auth ────────────────────────────────────────────────────────────────────
+
 
 @api.post("/auth/login", response_model=TokenResponse)
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
@@ -218,10 +269,15 @@ async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
 async def auth_me(user: Optional[DBUser] = Depends(get_current_user)):
     if user is None:
         return {"authenticated": False}
-    return {"authenticated": True, "username": user.username, "created_at": user.created_at.isoformat() if user.created_at else None}
+    return {
+        "authenticated": True,
+        "username": user.username,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+    }
 
 
 # ── Checks ─────────────────────────────────────────────────────────────────
+
 
 @api.get("/checks")
 async def list_checks():
@@ -229,6 +285,7 @@ async def list_checks():
 
 
 # ── Web Scanner ────────────────────────────────────────────────────────────
+
 
 @api.post("/scan", response_model=ScanResponse)
 async def start_scan(req: ScanRequest):
@@ -255,6 +312,7 @@ async def get_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
         return result
     async with db as session:
         from sqlalchemy import select
+
         db_scan = (await session.execute(select(DBScan).where(DBScan.id == scan_id))).scalar_one_or_none()
         if not db_scan:
             raise HTTPException(status_code=404, detail="Scan not found")
@@ -269,9 +327,18 @@ async def get_scan(scan_id: str, db: AsyncSession = Depends(get_db)):
             "severity_summary": db_scan.severity_summary,
             "error": db_scan.error,
             "findings": [
-                {"id": f.id, "name": f.name, "description": f.description, "severity": f.severity,
-                 "url": f.url, "evidence": f.evidence, "remediation": f.remediation,
-                 "references": f.references, "source": f.source, "status": f.status or "open"}
+                {
+                    "id": f.id,
+                    "name": f.name,
+                    "description": f.description,
+                    "severity": f.severity,
+                    "url": f.url,
+                    "evidence": f.evidence,
+                    "remediation": f.remediation,
+                    "references": f.references,
+                    "source": f.source,
+                    "status": f.status or "open",
+                }
                 for f in db_scan.findings
             ],
         }
@@ -282,13 +349,18 @@ async def list_scans():
     return {
         "active": list(active_scans.keys()),
         "completed": [
-            {"scan_id": sid, "target": r.get("target", {}).get("url", "unknown"), "status": r.get("status")}
+            {
+                "scan_id": sid,
+                "target": r.get("target", {}).get("url", "unknown"),
+                "status": r.get("status"),
+            }
             for sid, r in scan_results.items()
         ],
     }
 
 
 # ── Link Scanner Comprehensive ─────────────────────────────────────────────
+
 
 @api.post("/link/scan-comprehensive")
 async def comprehensive_scan(req: ComprehensiveScanRequest):
@@ -297,11 +369,19 @@ async def comprehensive_scan(req: ComprehensiveScanRequest):
     scan_id = uuid.uuid4().hex[:12]
 
     async def _progress(source: str, status: str):
-        await _broadcast({"type": "comprehensive_progress", "scan_id": scan_id, "source": source, "status": status})
+        await _broadcast(
+            {
+                "type": "comprehensive_progress",
+                "scan_id": scan_id,
+                "source": source,
+                "status": status,
+            }
+        )
 
     async def run_comprehensive():
         try:
             from src.scanner.comprehensive import run_comprehensive_scan
+
             result = await run_comprehensive_scan(
                 url=req.url,
                 include_tech=req.include_tech,
@@ -313,25 +393,47 @@ async def comprehensive_scan(req: ComprehensiveScanRequest):
             result["scan_id"] = scan_id
             result["status"] = "completed"
             scan_results[scan_id] = result
-            await _broadcast({"type": "comprehensive_completed", "scan_id": scan_id, "result": result})
+            await _broadcast(
+                {
+                    "type": "comprehensive_completed",
+                    "scan_id": scan_id,
+                    "result": result,
+                }
+            )
         except Exception as exc:
             logger.error(f"Comprehensive scan {scan_id} failed: {exc}")
-            scan_results[scan_id] = {"status": "failed", "error": str(exc), "target": req.url}
+            scan_results[scan_id] = {
+                "status": "failed",
+                "error": str(exc),
+                "target": req.url,
+            }
             await _broadcast({"type": "comprehensive_failed", "scan_id": scan_id, "error": str(exc)})
         finally:
             active_scans.pop(scan_id, None)
 
     task = asyncio.create_task(run_comprehensive())
     active_scans[scan_id] = task
-    return {"scan_id": scan_id, "status": "started", "target": req.url, "sources": ["technology_detect", "subdomain_discovery", "cve_lookup", "dns_enumeration"]}
+    return {
+        "scan_id": scan_id,
+        "status": "started",
+        "target": req.url,
+        "sources": [
+            "technology_detect",
+            "subdomain_discovery",
+            "cve_lookup",
+            "dns_enumeration",
+        ],
+    }
 
 
 def httpx_async_client():
     import httpx
+
     return httpx.AsyncClient(timeout=httpx.Timeout(30.0), follow_redirects=True, verify=False)
 
 
 # ── Network Scanner ────────────────────────────────────────────────────────
+
 
 @api.post("/network/scan")
 async def network_scan(req: NetworkScanRequest):
@@ -339,18 +441,37 @@ async def network_scan(req: NetworkScanRequest):
 
     async def run_network_scan():
         try:
-            await _broadcast({"type": "network_scan_started", "scan_id": scan_id, "target": req.target})
+            await _broadcast(
+                {
+                    "type": "network_scan_started",
+                    "scan_id": scan_id,
+                    "target": req.target,
+                }
+            )
             from src.scanner.checks.network import NetworkScanCheck
+
             scanner = NetworkScanCheck()
             results = await scanner.run(req.target, None)
             scan_results[scan_id] = {
-                "scan_id": scan_id, "status": "completed", "target": req.target,
+                "scan_id": scan_id,
+                "status": "completed",
+                "target": req.target,
                 "findings": [r.model_dump(mode="json") for r in results],
             }
-            await _broadcast({"type": "network_scan_completed", "scan_id": scan_id, "result": scan_results[scan_id]})
+            await _broadcast(
+                {
+                    "type": "network_scan_completed",
+                    "scan_id": scan_id,
+                    "result": scan_results[scan_id],
+                }
+            )
         except Exception as exc:
             logger.error(f"Network scan {scan_id} failed: {exc}")
-            scan_results[scan_id] = {"status": "failed", "error": str(exc), "target": req.target}
+            scan_results[scan_id] = {
+                "status": "failed",
+                "error": str(exc),
+                "target": req.target,
+            }
             await _broadcast({"type": "network_scan_failed", "scan_id": scan_id, "error": str(exc)})
         finally:
             active_scans.pop(scan_id, None)
@@ -378,16 +499,29 @@ async def wifi_scan():
         try:
             await _broadcast({"type": "wifi_scan_started", "scan_id": scan_id})
             from src.scanner.checks.wifi import WiFiScanCheck
+
             scanner = WiFiScanCheck()
             results = await scanner.run("wifi://local", None)
             scan_results[scan_id] = {
-                "scan_id": scan_id, "status": "completed", "target": "wifi://local",
+                "scan_id": scan_id,
+                "status": "completed",
+                "target": "wifi://local",
                 "findings": [r.model_dump(mode="json") for r in results],
             }
-            await _broadcast({"type": "wifi_scan_completed", "scan_id": scan_id, "result": scan_results[scan_id]})
+            await _broadcast(
+                {
+                    "type": "wifi_scan_completed",
+                    "scan_id": scan_id,
+                    "result": scan_results[scan_id],
+                }
+            )
         except Exception as exc:
             logger.error(f"WiFi scan {scan_id} failed: {exc}")
-            scan_results[scan_id] = {"status": "failed", "error": str(exc), "target": "wifi://local"}
+            scan_results[scan_id] = {
+                "status": "failed",
+                "error": str(exc),
+                "target": "wifi://local",
+            }
             await _broadcast({"type": "wifi_scan_failed", "scan_id": scan_id, "error": str(exc)})
         finally:
             active_scans.pop(scan_id, None)
@@ -399,13 +533,20 @@ async def wifi_scan():
 
 # ── OWASP Noir ─────────────────────────────────────────────────────────────
 
+
 @api.post("/noir/audit")
 async def noir_audit(req: NoirAuditRequest):
     scan_id = uuid.uuid4().hex[:12]
 
     async def run_noir_scan():
         try:
-            await _broadcast({"type": "noir_audit_started", "scan_id": scan_id, "path": req.project_path})
+            await _broadcast(
+                {
+                    "type": "noir_audit_started",
+                    "scan_id": scan_id,
+                    "path": req.project_path,
+                }
+            )
             global noir
             if not noir.is_installed():
                 raise RuntimeError("OWASP Noir no está instalado. Instalar con: snap install noir o brew install noir")
@@ -414,14 +555,26 @@ async def noir_audit(req: NoirAuditRequest):
             output = await loop.run_in_executor(None, noir.scan, req.project_path, req.output_format)
             findings = noir.parse_results(output)
             scan_results[scan_id] = {
-                "scan_id": scan_id, "status": "completed", "project_path": req.project_path,
+                "scan_id": scan_id,
+                "status": "completed",
+                "project_path": req.project_path,
                 "findings": [f.model_dump(mode="json") for f in findings],
                 "raw_output": output,
             }
-            await _broadcast({"type": "noir_audit_completed", "scan_id": scan_id, "result": scan_results[scan_id]})
+            await _broadcast(
+                {
+                    "type": "noir_audit_completed",
+                    "scan_id": scan_id,
+                    "result": scan_results[scan_id],
+                }
+            )
         except Exception as exc:
             logger.error(f"Noir audit {scan_id} failed: {exc}")
-            scan_results[scan_id] = {"status": "failed", "error": str(exc), "project_path": req.project_path}
+            scan_results[scan_id] = {
+                "status": "failed",
+                "error": str(exc),
+                "project_path": req.project_path,
+            }
             await _broadcast({"type": "noir_audit_failed", "scan_id": scan_id, "error": str(exc)})
         finally:
             active_scans.pop(scan_id, None)
@@ -435,8 +588,9 @@ async def noir_audit(req: NoirAuditRequest):
 async def noir_upload(file: UploadFile = File(...)):
     scan_id = uuid.uuid4().hex[:12]
 
-    import shutil
     import io
+    import shutil
+
     base_dir = Path.home() / ".websentinel" / "uploads"
     base_dir.mkdir(parents=True, exist_ok=True)
     upload_dir = base_dir / scan_id
@@ -463,7 +617,13 @@ async def noir_upload(file: UploadFile = File(...)):
 
         async def run_upload_scan():
             try:
-                await _broadcast({"type": "noir_audit_started", "scan_id": scan_id, "path": str(project_dir)})
+                await _broadcast(
+                    {
+                        "type": "noir_audit_started",
+                        "scan_id": scan_id,
+                        "path": str(project_dir),
+                    }
+                )
                 if not noir.is_installed():
                     raise RuntimeError("OWASP Noir no está instalado.")
                 loop = asyncio.get_running_loop()
@@ -471,14 +631,26 @@ async def noir_upload(file: UploadFile = File(...)):
                 output = await loop.run_in_executor(None, noir.scan, str(project_dir), "json")
                 findings = noir.parse_results(output)
                 scan_results[scan_id] = {
-                    "scan_id": scan_id, "status": "completed", "project_path": str(project_dir),
+                    "scan_id": scan_id,
+                    "status": "completed",
+                    "project_path": str(project_dir),
                     "findings": [f.model_dump(mode="json") for f in findings],
                     "raw_output": output,
                 }
-                await _broadcast({"type": "noir_audit_completed", "scan_id": scan_id, "result": scan_results[scan_id]})
+                await _broadcast(
+                    {
+                        "type": "noir_audit_completed",
+                        "scan_id": scan_id,
+                        "result": scan_results[scan_id],
+                    }
+                )
             except Exception as exc:
                 logger.error(f"Noir upload scan {scan_id} failed: {exc}")
-                scan_results[scan_id] = {"status": "failed", "error": str(exc), "project_path": str(project_dir)}
+                scan_results[scan_id] = {
+                    "status": "failed",
+                    "error": str(exc),
+                    "project_path": str(project_dir),
+                }
                 await _broadcast({"type": "noir_audit_failed", "scan_id": scan_id, "error": str(exc)})
             finally:
                 active_scans.pop(scan_id, None)
@@ -487,7 +659,12 @@ async def noir_upload(file: UploadFile = File(...)):
         task = asyncio.create_task(run_upload_scan())
         active_scans[scan_id] = task
 
-        return {"scan_id": scan_id, "status": "started", "project_path": str(project_dir), "uploaded": True}
+        return {
+            "scan_id": scan_id,
+            "status": "started",
+            "project_path": str(project_dir),
+            "uploaded": True,
+        }
 
     except Exception as e:
         shutil.rmtree(upload_dir, ignore_errors=True)
@@ -498,7 +675,9 @@ async def noir_upload(file: UploadFile = File(...)):
 async def check_noir():
     return {
         "installed": noir.is_installed(),
-        "message": "OWASP Noir está disponible" if noir.is_installed() else "Noir no está instalado. Instalar con: snap install noir"
+        "message": "OWASP Noir está disponible"
+        if noir.is_installed()
+        else "Noir no está instalado. Instalar con: snap install noir",
     }
 
 
@@ -516,7 +695,17 @@ async def find_projects():
         Path(".").resolve(),
     ]
     projects = []
-    indicators = ["package.json", "pyproject.toml", "Cargo.toml", "go.mod", "Gemfile", "requirements.txt", "index.html", "pom.xml", "build.gradle"]
+    indicators = [
+        "package.json",
+        "pyproject.toml",
+        "Cargo.toml",
+        "go.mod",
+        "Gemfile",
+        "requirements.txt",
+        "index.html",
+        "pom.xml",
+        "build.gradle",
+    ]
     for sdir in search_dirs:
         if not sdir.is_dir():
             continue
@@ -535,6 +724,7 @@ async def find_projects():
 
 # ── Report Generation ──────────────────────────────────────────────────────
 
+
 @api.get("/scan/{scan_id}/report")
 async def generate_report(scan_id: str, format: str = Query("html", pattern="^(html|json|markdown)$")):
     result = scan_results.get(scan_id)
@@ -551,32 +741,38 @@ async def generate_report(scan_id: str, format: str = Query("html", pattern="^(h
         target_url = str(target)
 
     from src.scanner.models import CheckResult, Severity
+
     check_results = []
     for f in findings:
         if isinstance(f, dict):
-            check_results.append(CheckResult(
-                name=f.get("name", "Unknown"),
-                description=f.get("description", ""),
-                severity=Severity(f.get("severity", "info")),
-                url=f.get("url", target_url),
-                evidence=f.get("evidence"),
-                remediation=f.get("remediation", ""),
-                references=f.get("references", []),
-            ))
+            check_results.append(
+                CheckResult(
+                    name=f.get("name", "Unknown"),
+                    description=f.get("description", ""),
+                    severity=Severity(f.get("severity", "info")),
+                    url=f.get("url", target_url),
+                    evidence=f.get("evidence"),
+                    remediation=f.get("remediation", ""),
+                    references=f.get("references", []),
+                )
+            )
 
     report = noir.generate_report(check_results, format)
 
     if format == "json":
         from fastapi.responses import JSONResponse
+
         return JSONResponse(json.loads(report) if isinstance(report, str) else report)
     elif format == "markdown":
         return PlainTextResponse(report, media_type="text/markdown")
     else:
         from fastapi.responses import HTMLResponse
+
         return HTMLResponse(report)
 
 
 # ── Pipeline Endpoints ──────────────────────────────────────────────────────
+
 
 @api.post("/pipeline")
 async def create_pipeline(req: PipelineRequest):
@@ -597,6 +793,7 @@ async def create_pipeline(req: PipelineRequest):
         ],
     )
     from src.orchestrator.pipeline import active_pipelines, pipeline_tasks
+
     active_pipelines[pipeline_id] = state
 
     async def _run():
@@ -642,6 +839,7 @@ async def list_all_pipelines():
 @api.delete("/pipeline/{pipeline_id}")
 async def cancel_pipeline(pipeline_id: str):
     from src.orchestrator.pipeline import pipeline_tasks
+
     state = get_pipeline(pipeline_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Pipeline not found")
@@ -658,6 +856,7 @@ async def cancel_pipeline(pipeline_id: str):
 
 VALID_STATUSES = {"open", "fixed", "false_positive", "acknowledged"}
 
+
 class FindingStatusUpdate(BaseModel):
     status: str
 
@@ -672,6 +871,7 @@ class FindingStatusUpdate(BaseModel):
 @api.patch("/finding/{finding_id}")
 async def update_finding_status(finding_id: str, req: FindingStatusUpdate, db: AsyncSession = Depends(get_db)):
     from sqlalchemy import select
+
     async with db as session:
         result = await session.execute(select(DBFinding).where(DBFinding.id == finding_id))
         finding = result.scalar_one_or_none()
@@ -696,6 +896,7 @@ async def list_findings(
     db: AsyncSession = Depends(get_db),
 ):
     from sqlalchemy import select
+
     async with db as session:
         q = select(DBFinding)
         if scan_id:
@@ -710,35 +911,40 @@ async def list_findings(
         "total": len(findings),
         "findings": [
             {
-                "id": f.id, "scan_id": f.scan_id, "name": f.name,
-                "description": f.description, "severity": f.severity,
-                "url": f.url, "evidence": f.evidence,
-                "remediation": f.remediation, "references": f.references,
-                "source": f.source, "status": f.status or "open",
+                "id": f.id,
+                "scan_id": f.scan_id,
+                "name": f.name,
+                "description": f.description,
+                "severity": f.severity,
+                "url": f.url,
+                "evidence": f.evidence,
+                "remediation": f.remediation,
+                "references": f.references,
+                "source": f.source,
+                "status": f.status or "open",
                 "resolved_at": f.resolved_at.isoformat() if f.resolved_at else None,
             }
             for f in findings
-        ]
+        ],
     }
 
 
 @api.get("/stats")
 async def get_stats(db: AsyncSession = Depends(get_db)):
-    from sqlalchemy import select, func
+    from sqlalchemy import func, select
+
     async with db as session:
         total_scans = (await session.execute(select(func.count(DBScan.id)))).scalar() or 0
         total_findings = (await session.execute(select(func.count(DBFinding.id)))).scalar() or 0
         severity_counts = {}
         for sev in ("critical", "high", "medium", "low", "info"):
-            cnt = (await session.execute(
-                select(func.count(DBFinding.id)).where(DBFinding.severity == sev)
-            )).scalar() or 0
+            cnt = (
+                await session.execute(select(func.count(DBFinding.id)).where(DBFinding.severity == sev))
+            ).scalar() or 0
             severity_counts[sev] = cnt
         status_counts = {}
         for st in ("open", "fixed", "false_positive", "acknowledged"):
-            cnt = (await session.execute(
-                select(func.count(DBFinding.id)).where(DBFinding.status == st)
-            )).scalar() or 0
+            cnt = (await session.execute(select(func.count(DBFinding.id)).where(DBFinding.status == st))).scalar() or 0
             status_counts[st] = cnt
     return {
         "total_scans": total_scans,
@@ -764,13 +970,21 @@ async def generate_remediation_plan(scan_id: str):
     plan = []
     for f in sorted_findings[:20]:
         remediation = f.get("ai_remediation") or f.get("remediation", "")
-        plan.append({
-            "name": f.get("name", "Unknown"),
-            "severity": f.get("severity", "info"),
-            "url": f.get("url", ""),
-            "remediation": remediation,
-            "priority": {"critical": "Immediate", "high": "Urgent", "medium": "Normal", "low": "Low", "info": "Informational"}.get(f.get("severity", "info"), "Low"),
-        })
+        plan.append(
+            {
+                "name": f.get("name", "Unknown"),
+                "severity": f.get("severity", "info"),
+                "url": f.get("url", ""),
+                "remediation": remediation,
+                "priority": {
+                    "critical": "Immediate",
+                    "high": "Urgent",
+                    "medium": "Normal",
+                    "low": "Low",
+                    "info": "Informational",
+                }.get(f.get("severity", "info"), "Low"),
+            }
+        )
 
     return {"plan": plan, "total": len(plan), "scan_id": scan_id}
 
@@ -785,17 +999,22 @@ async def pipeline_report(pipeline_id: str, format: str = Query("json")):
     step_summaries = []
     for s in state.steps:
         if s.result:
-            findings = s.result.get("findings", s.result.get("vulnerabilities", s.result.get("enriched_findings", [])))
+            findings = s.result.get(
+                "findings",
+                s.result.get("vulnerabilities", s.result.get("enriched_findings", [])),
+            )
             all_findings.extend(findings)
-            step_summaries.append({
-                "step": s.label,
-                "type": s.step_type.value if hasattr(s.step_type, 'value') else str(s.step_type),
-                "status": s.status.value if hasattr(s.status, 'value') else str(s.status),
-                "finding_count": s.finding_count,
-                "high_finding_count": s.high_finding_count,
-                "error": s.error,
-                "ai_decision": s.ai_decision,
-            })
+            step_summaries.append(
+                {
+                    "step": s.label,
+                    "type": s.step_type.value if hasattr(s.step_type, "value") else str(s.step_type),
+                    "status": s.status.value if hasattr(s.status, "value") else str(s.status),
+                    "finding_count": s.finding_count,
+                    "high_finding_count": s.high_finding_count,
+                    "error": s.error,
+                    "ai_decision": s.ai_decision,
+                }
+            )
 
     total = len(all_findings)
     severity_counts = {"critical": 0, "high": 0, "medium": 0, "low": 0, "info": 0}
@@ -808,11 +1027,10 @@ async def pipeline_report(pipeline_id: str, format: str = Query("json")):
         "pipeline_id": pipeline_id,
         "name": state.name,
         "target": state.target,
-        "status": state.status.value if hasattr(state.status, 'value') else str(state.status),
+        "status": state.status.value if hasattr(state.status, "value") else str(state.status),
         "generated_at": datetime.now().isoformat(),
         "duration_seconds": (
-            (state.finished_at - state.created_at).total_seconds()
-            if state.finished_at and state.created_at else None
+            (state.finished_at - state.created_at).total_seconds() if state.finished_at and state.created_at else None
         ),
         "summary": {
             "total_steps": len(state.steps),
@@ -828,7 +1046,12 @@ async def pipeline_report(pipeline_id: str, format: str = Query("json")):
         return report
 
     if format == "markdown":
-        lines = [f"# Pipeline Report: {state.name}", f"**Target:** {state.target}", f"**Status:** {report['summary']['total_steps']} steps, {report['summary']['total_findings']} findings", ""]
+        lines = [
+            f"# Pipeline Report: {state.name}",
+            f"**Target:** {state.target}",
+            f"**Status:** {report['summary']['total_steps']} steps, {report['summary']['total_findings']} findings",
+            "",
+        ]
         lines.append("## Step Summary")
         for s in step_summaries:
             lines.append(f"- **{s['step']}** ({s['type']}): {s['status']} — {s['finding_count']} findings")
@@ -840,13 +1063,14 @@ async def pipeline_report(pipeline_id: str, format: str = Query("json")):
         return PlainTextResponse("\n".join(lines), media_type="text/markdown")
 
     sev_bars = "".join(
-        f"<div style='display:flex;align-items:center;gap:8px;margin:4px 0'><span style='width:80px;font-size:12px;color:#94a3b8'>{sev.upper()}</span><div style='flex:1;height:20px;background:#1e2d45;border-radius:4px;overflow:hidden'><div style='width:{max(1, cnt/max(severity_counts.values(), default=1)*100)}%;height:100%;background:{'#dc2626' if sev=='critical' else '#ea580c' if sev=='high' else '#ca8a04' if sev=='medium' else '#2563eb' if sev=='low' else '#52525b'};border-radius:4px'></div></div><span style='width:40px;font-size:12px;color:#e2e8f0;text-align:right'>{cnt}</span></div>"
-        for sev, cnt in severity_counts.items() if cnt > 0
+        f"<div style='display:flex;align-items:center;gap:8px;margin:4px 0'><span style='width:80px;font-size:12px;color:#94a3b8'>{sev.upper()}</span><div style='flex:1;height:20px;background:#1e2d45;border-radius:4px;overflow:hidden'><div style='width:{max(1, cnt / max(severity_counts.values(), default=1) * 100)}%;height:100%;background:{'#dc2626' if sev == 'critical' else '#ea580c' if sev == 'high' else '#ca8a04' if sev == 'medium' else '#2563eb' if sev == 'low' else '#52525b'};border-radius:4px'></div></div><span style='width:40px;font-size:12px;color:#e2e8f0;text-align:right'>{cnt}</span></div>"
+        for sev, cnt in severity_counts.items()
+        if cnt > 0
     )
     steps_html = "".join(
         f"<tr><td style='padding:8px;border-bottom:1px solid #1e2d45;color:#e2e8f0;font-size:13px'>{s['step']}</td>"
         f"<td style='padding:8px;border-bottom:1px solid #1e2d45;color:#64748b;font-size:12px'>{s['type']}</td>"
-        f"<td style='padding:8px;border-bottom:1px solid #1e2d45'><span style='padding:2px 8px;border-radius:4px;font-size:11px;background:{'rgba(34,197,94,0.1)' if s['status']=='completed' else 'rgba(239,68,68,0.1)'};color:{'#22c55e' if s['status']=='completed' else '#ef4444'}'>{s['status']}</span></td>"
+        f"<td style='padding:8px;border-bottom:1px solid #1e2d45'><span style='padding:2px 8px;border-radius:4px;font-size:11px;background:{'rgba(34,197,94,0.1)' if s['status'] == 'completed' else 'rgba(239,68,68,0.1)'};color:{'#22c55e' if s['status'] == 'completed' else '#ef4444'}'>{s['status']}</span></td>"
         f"<td style='padding:8px;border-bottom:1px solid #1e2d45;color:#e2e8f0;font-size:13px;text-align:center'>{s['finding_count']}</td></tr>"
         for s in step_summaries
     )
@@ -859,19 +1083,20 @@ h1{{color:#fff;font-size:24px}}h2{{color:#94a3b8;font-size:16px;margin-top:30px}
 table{{width:100%;border-collapse:collapse}}td{{padding:8px}}</style></head><body>
 <h1>🔍 Pipeline Report: {state.name}</h1>
 <div class="card"><p><strong>Target:</strong> {state.target}</p>
-<p><strong>Status:</strong> {report['summary']['total_steps']} steps, {report['summary']['total_findings']} findings</p>
-<p><strong>Duration:</strong> {report['duration_seconds']:.1f}s</p></div>
+<p><strong>Status:</strong> {report["summary"]["total_steps"]} steps, {report["summary"]["total_findings"]} findings</p>
+<p><strong>Duration:</strong> {report["duration_seconds"]:.1f}s</p></div>
 <h2>Severity Breakdown</h2><div class="card">{sev_bars}</div>
 <h2>Steps</h2><div class="card"><table><tr><th style='text-align:left;color:#64748b;font-size:11px;padding:8px;border-bottom:2px solid #1e2d45'>Step</th>
 <th style='text-align:left;color:#64748b;font-size:11px;padding:8px;border-bottom:2px solid #1e2d45'>Type</th>
 <th style='text-align:left;color:#64748b;font-size:11px;padding:8px;border-bottom:2px solid #1e2d45'>Status</th>
 <th style='text-align:center;color:#64748b;font-size:11px;padding:8px;border-bottom:2px solid #1e2d45'>Findings</th></tr>{steps_html}</table></div>
-<p style='text-align:center;color:#475569;font-size:11px;margin-top:40px'>Generated by VulnScout • {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>
+<p style='text-align:center;color:#475569;font-size:11px;margin-top:40px'>Generated by VulnScout • {datetime.now().strftime("%Y-%m-%d %H:%M")}</p>
 </body></html>"""
     return HTMLResponse(html)
 
 
 # ── AI Endpoints ──────────────────────────────────────────────────────────
+
 
 @api.get("/ai/check")
 async def ai_check():
@@ -879,7 +1104,9 @@ async def ai_check():
     return {
         "available": available,
         "model": ai_enricher.client.model if available else None,
-        "message": "Ollama is available" if available else "Ollama not detected. Install from ollama.com and pull a model (e.g. llama3.2)",
+        "message": "Ollama is available"
+        if available
+        else "Ollama not detected. Install from ollama.com and pull a model (e.g. llama3.2)",
     }
 
 
@@ -906,7 +1133,12 @@ async def ai_enrich(scan_id: str):
     result["ai_summary"] = summary
     result["ai_attack_paths"] = attack_paths
 
-    return {"enriched": True, "findings": len(enriched), "attack_paths": len(attack_paths), "summary": bool(summary)}
+    return {
+        "enriched": True,
+        "findings": len(enriched),
+        "attack_paths": len(attack_paths),
+        "summary": bool(summary),
+    }
 
 
 @api.post("/ai/chat")
@@ -926,6 +1158,7 @@ async def ai_attack_paths(scan_id: str):
         return {"attack_paths": [], "graph": {"nodes": [], "edges": []}}
 
     from src.ai.attack_path import build_attack_graph
+
     target = result.get("target", {})
     target_url = target.get("url", "unknown") if isinstance(target, dict) else str(target)
     graph = build_attack_graph(paths, target_url)

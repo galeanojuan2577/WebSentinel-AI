@@ -20,6 +20,7 @@ async def test_ports_check_no_extra_ports():
 
     with patch("asyncio.open_connection", side_effect=mock_open):
         from httpx import AsyncClient
+
         async with AsyncClient() as client:
             results = await check.run("https://example.com", client)
 

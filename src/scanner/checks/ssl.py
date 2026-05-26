@@ -43,93 +43,109 @@ class SSLCheck(BaseCheck):
             cert = sock.getpeercert()
 
             if not cert:
-                return [CheckResult(
-                    name="No SSL Certificate",
-                    description="El servidor no presentó un certificado SSL.",
-                    severity=Severity.HIGH,
-                    url=url,
-                    remediation="Configurar un certificado SSL/TLS válido emitido por una CA confiable.",
-                )]
+                return [
+                    CheckResult(
+                        name="No SSL Certificate",
+                        description="El servidor no presentó un certificado SSL.",
+                        severity=Severity.HIGH,
+                        url=url,
+                        remediation="Configurar un certificado SSL/TLS válido emitido por una CA confiable.",
+                    )
+                ]
 
             not_after_str = cert.get("notAfter", "")
             if not_after_str:
                 not_after = datetime.strptime(not_after_str, "%b %d %H:%M:%S %Y %Z")
                 if not_after < datetime.now():
-                    results.append(CheckResult(
-                        name="Expired SSL Certificate",
-                        description=f"El certificado expiró el {not_after_str}.",
-                        severity=Severity.HIGH,
-                        url=url,
-                        evidence=f"Expired: {not_after_str}",
-                        remediation="Renovar el certificado SSL con tu proveedor de CA.",
-                        references=["https://letsencrypt.org/"],
-                    ))
+                    results.append(
+                        CheckResult(
+                            name="Expired SSL Certificate",
+                            description=f"El certificado expiró el {not_after_str}.",
+                            severity=Severity.HIGH,
+                            url=url,
+                            evidence=f"Expired: {not_after_str}",
+                            remediation="Renovar el certificado SSL con tu proveedor de CA.",
+                            references=["https://letsencrypt.org/"],
+                        )
+                    )
                 elif (not_after - datetime.now()).days < 30:
-                    results.append(CheckResult(
-                        name="SSL Certificate Expiring Soon",
-                        description=f"El certificado expirará el {not_after_str} ({ (not_after - datetime.now()).days } días).",
-                        severity=Severity.MEDIUM,
-                        url=url,
-                        evidence=f"Expires: {not_after_str}",
-                        remediation="Renovar el certificado antes de su expiración.",
-                    ))
+                    results.append(
+                        CheckResult(
+                            name="SSL Certificate Expiring Soon",
+                            description=f"El certificado expirará el {not_after_str} ({(not_after - datetime.now()).days} días).",
+                            severity=Severity.MEDIUM,
+                            url=url,
+                            evidence=f"Expires: {not_after_str}",
+                            remediation="Renovar el certificado antes de su expiración.",
+                        )
+                    )
 
             issuer = dict(x[0] for x in cert.get("issuer", []))
             subject = dict(x[0] for x in cert.get("subject", []))
             cn = subject.get("commonName", "unknown")
-            results.append(CheckResult(
-                name="SSL Certificate Info",
-                description=f"Certificado emitido por: {issuer.get('organizationName', 'Unknown')} | "
-                            f"Subject: {cn} | Válido hasta: {not_after_str}",
-                severity=Severity.INFO,
-                url=url,
-                evidence=f"Subject: {cn}, Issuer: {issuer.get('organizationName', 'Unknown')}",
-                remediation="N/A — información del certificado.",
-            ))
+            results.append(
+                CheckResult(
+                    name="SSL Certificate Info",
+                    description=f"Certificado emitido por: {issuer.get('organizationName', 'Unknown')} | "
+                    f"Subject: {cn} | Válido hasta: {not_after_str}",
+                    severity=Severity.INFO,
+                    url=url,
+                    evidence=f"Subject: {cn}, Issuer: {issuer.get('organizationName', 'Unknown')}",
+                    remediation="N/A — información del certificado.",
+                )
+            )
 
             writer.close()
 
         except ssl.SSLCertVerificationError as exc:
-            results.append(CheckResult(
-                name="SSL Certificate Verification Failed",
-                description=f"El certificado no pudo ser verificado: {exc}",
-                severity=Severity.HIGH,
-                url=url,
-                evidence=str(exc),
-                remediation="Verificar que el certificado sea emitido por una CA confiable y que el hostname coincida.",
-            ))
+            results.append(
+                CheckResult(
+                    name="SSL Certificate Verification Failed",
+                    description=f"El certificado no pudo ser verificado: {exc}",
+                    severity=Severity.HIGH,
+                    url=url,
+                    evidence=str(exc),
+                    remediation="Verificar que el certificado sea emitido por una CA confiable y que el hostname coincida.",
+                )
+            )
         except (OSError, socket.gaierror) as exc:
-            results.append(CheckResult(
-                name="SSL Connection Error",
-                description=f"No se pudo establecer conexión SSL: {exc}",
-                severity=Severity.MEDIUM,
-                url=url,
-                evidence=str(exc),
-                remediation="Verificar que el servidor soporte HTTPS en el puerto 443.",
-            ))
+            results.append(
+                CheckResult(
+                    name="SSL Connection Error",
+                    description=f"No se pudo establecer conexión SSL: {exc}",
+                    severity=Severity.MEDIUM,
+                    url=url,
+                    evidence=str(exc),
+                    remediation="Verificar que el servidor soporte HTTPS en el puerto 443.",
+                )
+            )
 
         try:
             resp = await client.get(f"https://{hostname}", follow_redirects=True, timeout=10)
             hsts = resp.headers.get("strict-transport-security", "")
             if not hsts:
-                results.append(CheckResult(
-                    name="Missing HSTS Header",
-                    description="No se detectó Strict-Transport-Security. Los navegadores podrían conectar por HTTP en visitas posteriores.",
-                    severity=Severity.MEDIUM,
-                    url=f"https://{hostname}",
-                    remediation="Agregar al servidor web:\n"
-                                "Strict-Transport-Security: max-age=31536000; includeSubDomains",
-                    references=["https://owasp.org/www-project-secure-headers/#http-strict-transport-security"],
-                ))
+                results.append(
+                    CheckResult(
+                        name="Missing HSTS Header",
+                        description="No se detectó Strict-Transport-Security. Los navegadores podrían conectar por HTTP en visitas posteriores.",
+                        severity=Severity.MEDIUM,
+                        url=f"https://{hostname}",
+                        remediation="Agregar al servidor web:\n"
+                        "Strict-Transport-Security: max-age=31536000; includeSubDomains",
+                        references=["https://owasp.org/www-project-secure-headers/#http-strict-transport-security"],
+                    )
+                )
             else:
-                results.append(CheckResult(
-                    name="HSTS Header Present",
-                    description=f"HSTS configurado: {hsts}",
-                    severity=Severity.INFO,
-                    url=f"https://{hostname}",
-                    evidence=hsts,
-                    remediation="N/A — HSTS está correctamente configurado.",
-                ))
+                results.append(
+                    CheckResult(
+                        name="HSTS Header Present",
+                        description=f"HSTS configurado: {hsts}",
+                        severity=Severity.INFO,
+                        url=f"https://{hostname}",
+                        evidence=hsts,
+                        remediation="N/A — HSTS está correctamente configurado.",
+                    )
+                )
         except Exception:
             pass
 

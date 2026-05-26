@@ -27,7 +27,6 @@ async def get_db():
 
 
 async def init_db():
-    from src.api.db_models import User, Scan, Finding
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     async with engine.begin() as conn:

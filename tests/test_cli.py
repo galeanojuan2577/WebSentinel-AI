@@ -4,7 +4,6 @@ from src.cli.main import parse_args
 
 
 def test_cli_help():
-    import sys
     try:
         parse_args(["--help"])
     except SystemExit:

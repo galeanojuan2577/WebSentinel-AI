@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from src.scanner.engine import ScanEngine
-from src.scanner.models import ScanTarget, ScanStatus
+from src.scanner.models import ScanStatus, ScanTarget
 
 
 @pytest.mark.asyncio
@@ -26,7 +26,7 @@ async def test_engine_run_scan_basic():
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="<html><body>OK</body></html>")
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
     original_run = engine.run_scan
 
@@ -50,7 +50,7 @@ async def test_engine_run_with_filter():
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="<html><body>OK</body></html>")
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
     original_run = engine.run_scan
 
@@ -73,7 +73,7 @@ async def test_engine_scan_result_has_summary():
     async def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, text="<html><body>OK</body></html>")
 
-    client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    httpx.AsyncClient(transport=httpx.MockTransport(handler))
 
     original_run = engine.run_scan
 

@@ -12,7 +12,7 @@ from pydantic import BaseModel, Field
 
 from src.ai.ollama import OllamaClient
 from src.scanner.engine import ScanEngine
-from src.scanner.models import ScanTarget, ScanResult as EngineScanResult
+from src.scanner.models import ScanTarget
 
 logger = logging.getLogger("websentinel.orchestrator")
 
@@ -94,13 +94,15 @@ async def _run_step(
 ) -> None:
     step.status = StepStatus.RUNNING
     step.started_at = datetime.now(timezone.utc)
-    await broadcast({
-        "type": "pipeline_step_started",
-        "pipeline_id": step.step_id.rsplit("_", 1)[0] if "_" in step.step_id else "",
-        "step_id": step.step_id,
-        "step_type": step.step_type.value,
-        "label": step.label,
-    })
+    await broadcast(
+        {
+            "type": "pipeline_step_started",
+            "pipeline_id": step.step_id.rsplit("_", 1)[0] if "_" in step.step_id else "",
+            "step_id": step.step_id,
+            "step_type": step.step_type.value,
+            "label": step.label,
+        }
+    )
 
     try:
         if step.step_type == StepType.WEB_SCAN:
@@ -116,19 +118,16 @@ async def _run_step(
             step.result = data
             step.summary = result.summary
             step.finding_count = len(result.vulnerabilities)
-            step.high_finding_count = sum(
-                1 for v in result.vulnerabilities if v.severity in ("critical", "high")
-            )
+            step.high_finding_count = sum(1 for v in result.vulnerabilities if v.severity in ("critical", "high"))
 
         elif step.step_type == StepType.LINK_SCAN:
             from src.scanner.comprehensive import run_comprehensive_scan
+
             result = await run_comprehensive_scan(target)
             step.result = result
             findings = result.get("findings", [])
             step.finding_count = len(findings)
-            step.high_finding_count = sum(
-                1 for f in findings if f.get("severity") in ("critical", "high")
-            )
+            step.high_finding_count = sum(1 for f in findings if f.get("severity") in ("critical", "high"))
 
         elif step.step_type == StepType.AI_ENRICH:
             ollama = OllamaClient()
@@ -158,8 +157,8 @@ async def _run_step(
             prompt = (
                 f"Based on scan results for target {target}{findings_preview}, "
                 f"decide the next penetration testing step. "
-                f"Respond with ONLY valid JSON: {{\"decision\": \"continue|stop\", "
-                f"\"reason\": \"...\", \"next_step_type\": \"web_scan|link_scan|network_scan|noir_audit|null\"}}"
+                f'Respond with ONLY valid JSON: {{"decision": "continue|stop", '
+                f'"reason": "...", "next_step_type": "web_scan|link_scan|network_scan|noir_audit|null"}}'
             )
             try:
                 decision = await asyncio.wait_for(ollama._call(prompt), timeout=30)
@@ -176,7 +175,10 @@ async def _run_step(
                 }
             except (json.JSONDecodeError, TypeError):
                 step.ai_decision = "continue"
-                step.result = {"ai_decision": "continue", "reason": "AI response unparseable"}
+                step.result = {
+                    "ai_decision": "continue",
+                    "reason": "AI response unparseable",
+                }
 
         else:
             step.result = {"note": f"Step type {step.step_type} not implemented"}
@@ -185,28 +187,32 @@ async def _run_step(
 
         step.status = StepStatus.COMPLETED
         step.finished_at = datetime.now(timezone.utc)
-        await broadcast({
-            "type": "pipeline_step_completed",
-            "pipeline_id": step.step_id.rsplit("_", 1)[0] if "_" in step.step_id else "",
-            "step_id": step.step_id,
-            "step_type": step.step_type.value,
-            "label": step.label,
-            "summary": step.summary,
-            "finding_count": step.finding_count,
-            "high_finding_count": step.high_finding_count,
-        })
+        await broadcast(
+            {
+                "type": "pipeline_step_completed",
+                "pipeline_id": step.step_id.rsplit("_", 1)[0] if "_" in step.step_id else "",
+                "step_id": step.step_id,
+                "step_type": step.step_type.value,
+                "label": step.label,
+                "summary": step.summary,
+                "finding_count": step.finding_count,
+                "high_finding_count": step.high_finding_count,
+            }
+        )
 
     except Exception as e:
         logger.error(f"Pipeline step {step.step_id} failed: {e}")
         step.status = StepStatus.FAILED
         step.error = str(e)
         step.finished_at = datetime.now(timezone.utc)
-        await broadcast({
-            "type": "pipeline_step_failed",
-            "pipeline_id": step.step_id.rsplit("_", 1)[0] if "_" in step.step_id else "",
-            "step_id": step.step_id,
-            "error": str(e),
-        })
+        await broadcast(
+            {
+                "type": "pipeline_step_failed",
+                "pipeline_id": step.step_id.rsplit("_", 1)[0] if "_" in step.step_id else "",
+                "step_id": step.step_id,
+                "error": str(e),
+            }
+        )
 
 
 async def _ai_gate_check(
@@ -221,7 +227,7 @@ async def _ai_gate_check(
         f"Given these results from {previous_step.step_type} on {target}, "
         f"should we run {step_config.step_type} next? "
         f"Context: {json.dumps(context, indent=2)[:2000]}\n\n"
-        f"Respond JSON: {{\"run\": true|false, \"reason\": \"...\"}}"
+        f'Respond JSON: {{"run": true|false, "reason": "..."}}'
     )
     try:
         resp = await ollama._call(prompt)
@@ -305,13 +311,15 @@ async def run_pipeline(
         ]
     active_pipelines[pipeline_id] = state
 
-    await broadcast({
-        "type": "pipeline_started",
-        "pipeline_id": pipeline_id,
-        "name": request.name,
-        "target": request.target,
-        "total_steps": len(steps),
-    })
+    await broadcast(
+        {
+            "type": "pipeline_started",
+            "pipeline_id": pipeline_id,
+            "name": request.name,
+            "target": request.target,
+            "total_steps": len(steps),
+        }
+    )
 
     ollama = OllamaClient()
     previous_result: Optional[StepResult] = None
@@ -320,19 +328,19 @@ async def run_pipeline(
         step_result = state.steps[i]
 
         if step_config.ai_gate and previous_result:
-            should_run = await _ai_gate_check(
-                step_config, previous_result, ollama, request.target, broadcast
-            )
+            should_run = await _ai_gate_check(step_config, previous_result, ollama, request.target, broadcast)
             if not should_run:
                 step_result.status = StepStatus.SKIPPED
                 step_result.ai_decision = "Skipped by AI gate"
-                await broadcast({
-                    "type": "pipeline_step_skipped",
-                    "pipeline_id": pipeline_id,
-                    "step_id": step_result.step_id,
-                    "label": step_result.label,
-                    "reason": step_result.ai_decision,
-                })
+                await broadcast(
+                    {
+                        "type": "pipeline_step_skipped",
+                        "pipeline_id": pipeline_id,
+                        "step_id": step_result.step_id,
+                        "label": step_result.label,
+                        "reason": step_result.ai_decision,
+                    }
+                )
                 previous_result = step_result
                 continue
 
@@ -345,23 +353,27 @@ async def run_pipeline(
             state.status = PipelineStatus.FAILED
             state.error = f"Step {step_result.label} failed: {step_result.error}"
             state.finished_at = datetime.now(timezone.utc)
-            await broadcast({
-                "type": "pipeline_failed",
-                "pipeline_id": pipeline_id,
-                "error": state.error,
-            })
+            await broadcast(
+                {
+                    "type": "pipeline_failed",
+                    "pipeline_id": pipeline_id,
+                    "error": state.error,
+                }
+            )
             return pipeline_id
 
         previous_result = step_result
 
     state.status = PipelineStatus.COMPLETED
     state.finished_at = datetime.now(timezone.utc)
-    await broadcast({
-        "type": "pipeline_completed",
-        "pipeline_id": pipeline_id,
-        "name": request.name,
-        "total_steps": len(steps),
-    })
+    await broadcast(
+        {
+            "type": "pipeline_completed",
+            "pipeline_id": pipeline_id,
+            "name": request.name,
+            "total_steps": len(steps),
+        }
+    )
 
     return pipeline_id
 

@@ -4,8 +4,6 @@ import asyncio
 import logging
 import re
 import shutil
-import subprocess
-from typing import Optional
 
 from src.scanner.checks.base import BaseCheck
 from src.scanner.models import CheckResult, Severity
@@ -27,45 +25,54 @@ class WiFiScanCheck(BaseCheck):
         results = []
         tool = self._detect_tool()
         if not tool:
-            results.append(CheckResult(
-                name="WiFi Scan",
-                description="No se encontró nmcli ni iwlist. Instala network-manager o wireless-tools.",
-                severity=Severity.INFO,
-                url="wifi://local",
-                evidence="Tools checked: nmcli, iwlist, airport — none found",
-                remediation="Instalar: sudo apt install network-manager wireless-tools",
-                references=[],
-            ))
+            results.append(
+                CheckResult(
+                    name="WiFi Scan",
+                    description="No se encontró nmcli ni iwlist. Instala network-manager o wireless-tools.",
+                    severity=Severity.INFO,
+                    url="wifi://local",
+                    evidence="Tools checked: nmcli, iwlist, airport — none found",
+                    remediation="Instalar: sudo apt install network-manager wireless-tools",
+                    references=[],
+                )
+            )
             return results
 
         networks = await self._scan_networks(tool)
         if not networks:
-            results.append(CheckResult(
-                name="WiFi Scan",
-                description="No se detectaron redes WiFi. Verifica que el adaptador WiFi esté activo.",
-                severity=Severity.INFO,
-                url="wifi://local",
-                evidence="WiFi scan completed but no networks found",
-                remediation="Activar WiFi y asegurar permisos: sudo nmcli radio wifi on",
-                references=[],
-            ))
+            results.append(
+                CheckResult(
+                    name="WiFi Scan",
+                    description="No se detectaron redes WiFi. Verifica que el adaptador WiFi esté activo.",
+                    severity=Severity.INFO,
+                    url="wifi://local",
+                    evidence="WiFi scan completed but no networks found",
+                    remediation="Activar WiFi y asegurar permisos: sudo nmcli radio wifi on",
+                    references=[],
+                )
+            )
             return results
 
         for net in networks:
             findings = self._analyze_network(net)
             results.extend(findings)
 
-        results.append(CheckResult(
-            name=f"WiFi Networks Found: {len(networks)}",
-            description=f"Se detectaron {len(networks)} redes WiFi en el área.",
-            severity=Severity.INFO,
-            url="wifi://local",
-            evidence=f"Total networks: {len(networks)}\n" + "\n".join(
-                f"{n.get('ssid','?')} ({n.get('security','?')}) {n.get('signal','?')}%" for n in networks[:10]
-            ),
-            remediation="Revisar las redes detectadas y asegurar que solo las autorizadas estén visibles.",
-            references=["https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/"],
-        ))
+        results.append(
+            CheckResult(
+                name=f"WiFi Networks Found: {len(networks)}",
+                description=f"Se detectaron {len(networks)} redes WiFi en el área.",
+                severity=Severity.INFO,
+                url="wifi://local",
+                evidence=f"Total networks: {len(networks)}\n"
+                + "\n".join(
+                    f"{n.get('ssid', '?')} ({n.get('security', '?')}) {n.get('signal', '?')}%" for n in networks[:10]
+                ),
+                remediation="Revisar las redes detectadas y asegurar que solo las autorizadas estén visibles.",
+                references=[
+                    "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/"
+                ],
+            )
+        )
 
         return results
 
@@ -88,8 +95,14 @@ class WiFiScanCheck(BaseCheck):
     async def _scan_nmcli(self) -> list[dict]:
         try:
             proc = await asyncio.create_subprocess_exec(
-                "nmcli", "-f", "SSID,BSSID,SIGNAL,SECURITY,CHAN,MODE", "device", "wifi", "list",
-                "--rescan", "yes",
+                "nmcli",
+                "-f",
+                "SSID,BSSID,SIGNAL,SECURITY,CHAN,MODE",
+                "device",
+                "wifi",
+                "list",
+                "--rescan",
+                "yes",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -117,14 +130,16 @@ class WiFiScanCheck(BaseCheck):
                 if ssid == "IN-USE":
                     continue
 
-                networks.append({
-                    "ssid": ssid,
-                    "bssid": bssid,
-                    "signal": signal,
-                    "security": security,
-                    "channel": chan,
-                    "mode": mode,
-                })
+                networks.append(
+                    {
+                        "ssid": ssid,
+                        "bssid": bssid,
+                        "signal": signal,
+                        "security": security,
+                        "channel": chan,
+                        "mode": mode,
+                    }
+                )
 
             return networks
 
@@ -143,7 +158,9 @@ class WiFiScanCheck(BaseCheck):
 
         try:
             proc = await asyncio.create_subprocess_exec(
-                "iwlist", iface, "scan",
+                "iwlist",
+                iface,
+                "scan",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -219,8 +236,13 @@ class WiFiScanCheck(BaseCheck):
         if self._has_nmcli:
             try:
                 proc = await asyncio.create_subprocess_exec(
-                    "nmcli", "-t", "-f", "DEVICE,TYPE", "device",
-                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+                    "nmcli",
+                    "-t",
+                    "-f",
+                    "DEVICE,TYPE",
+                    "device",
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
                 )
                 stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=10)
                 for line in stdout.decode().strip().split("\n"):
@@ -246,33 +268,35 @@ class WiFiScanCheck(BaseCheck):
             signal_pct = 0
 
         weak_auth = security in ("Open", "WEP", "WPA", "WPA1")
-        wps = "WPS" in security
 
         if weak_auth:
-            results.append(CheckResult(
-                name=f"Insecure WiFi: {ssid}",
-                description=f"Red WiFi '{ssid}' usa {security}, que es inseguro. "
-                            f"Recomendado: WPA2 o WPA3.",
-                severity=Severity.HIGH if security == "Open" else Severity.MEDIUM,
-                url=f"wifi://{bssid}",
-                evidence=f"SSID: {ssid}\nBSSID: {bssid}\nSecurity: {security}\nSignal: {signal_pct}%",
-                remediation="Cambiar a WPA2/WPA3 con contraseña robusta. Deshabilitar WPS.",
-                references=[
-                    "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/",
-                    "https://www.krackattacks.com/",
-                ],
-            ))
+            results.append(
+                CheckResult(
+                    name=f"Insecure WiFi: {ssid}",
+                    description=f"Red WiFi '{ssid}' usa {security}, que es inseguro. Recomendado: WPA2 o WPA3.",
+                    severity=Severity.HIGH if security == "Open" else Severity.MEDIUM,
+                    url=f"wifi://{bssid}",
+                    evidence=f"SSID: {ssid}\nBSSID: {bssid}\nSecurity: {security}\nSignal: {signal_pct}%",
+                    remediation="Cambiar a WPA2/WPA3 con contraseña robusta. Deshabilitar WPS.",
+                    references=[
+                        "https://owasp.org/www-project-web-security-testing-guide/latest/4-Web_Application_Security_Testing/",
+                        "https://www.krackattacks.com/",
+                    ],
+                )
+            )
 
         if signal_pct > 70:
-            results.append(CheckResult(
-                name=f"Strong Signal: {ssid}",
-                description=f"Red '{ssid}' tiene señal fuerte ({signal_pct}%). "
-                            "Redes con señal alta pueden ser más susceptibles a ataques de proximidad.",
-                severity=Severity.INFO,
-                url=f"wifi://{bssid}",
-                evidence=f"SSID: {ssid}\nBSSID: {bssid}\nSignal: {signal_pct}%\nSecurity: {security}",
-                remediation="Monitorear dispositivos conectados. Usar WPA2/WPA3.",
-                references=[],
-            ))
+            results.append(
+                CheckResult(
+                    name=f"Strong Signal: {ssid}",
+                    description=f"Red '{ssid}' tiene señal fuerte ({signal_pct}%). "
+                    "Redes con señal alta pueden ser más susceptibles a ataques de proximidad.",
+                    severity=Severity.INFO,
+                    url=f"wifi://{bssid}",
+                    evidence=f"SSID: {ssid}\nBSSID: {bssid}\nSignal: {signal_pct}%\nSecurity: {security}",
+                    remediation="Monitorear dispositivos conectados. Usar WPA2/WPA3.",
+                    references=[],
+                )
+            )
 
         return results

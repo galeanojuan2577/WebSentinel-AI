@@ -46,7 +46,11 @@ class OllamaClient:
             return False
 
     async def _call(
-        self, prompt: str, system: str = "", temperature: float = 0.3, max_tokens: int = 1024
+        self,
+        prompt: str,
+        system: str = "",
+        temperature: float = 0.3,
+        max_tokens: int = 1024,
     ) -> str:
         if not await self.check_available():
             logger.warning("Ollama not available, cannot call AI")
@@ -80,11 +84,11 @@ class OllamaClient:
 2. Exploitability assessment (easy/moderate/hard)
 3. Risk context (what an attacker could achieve)
 
-Vulnerability: {finding.get('name', 'Unknown')}
-Description: {finding.get('description', '')}
-URL: {finding.get('url', '')}
-Severity: {finding.get('severity', 'info')}
-Evidence: {finding.get('evidence', 'N/A')}
+Vulnerability: {finding.get("name", "Unknown")}
+Description: {finding.get("description", "")}
+URL: {finding.get("url", "")}
+Severity: {finding.get("severity", "info")}
+Evidence: {finding.get("evidence", "N/A")}
 
 Respond ONLY with valid JSON:
 {{"impact": "...", "exploitability": "easy|moderate|hard", "risk_context": "...", "cvss_estimate": 0.0-10.0}}"""
@@ -92,7 +96,12 @@ Respond ONLY with valid JSON:
         system = "You are a cybersecurity AI analyst. Respond only with valid JSON."
         result = await self._call(prompt, system, temperature=0.2)
         if not result:
-            return {"impact": "", "exploitability": "unknown", "risk_context": "", "cvss_estimate": 0.0}
+            return {
+                "impact": "",
+                "exploitability": "unknown",
+                "risk_context": "",
+                "cvss_estimate": 0.0,
+            }
         try:
             parsed = json.loads(result)
             return {
@@ -102,16 +111,21 @@ Respond ONLY with valid JSON:
                 "cvss_estimate": float(parsed.get("cvss_estimate", 0)),
             }
         except (json.JSONDecodeError, ValueError):
-            return {"impact": result[:200], "exploitability": "unknown", "risk_context": "", "cvss_estimate": 0.0}
+            return {
+                "impact": result[:200],
+                "exploitability": "unknown",
+                "risk_context": "",
+                "cvss_estimate": 0.0,
+            }
 
     async def generate_remediation(self, finding: dict) -> str:
         prompt = f"""Provide a concrete, step-by-step remediation plan for this vulnerability:
 
-Name: {finding.get('name', 'Unknown')}
-Description: {finding.get('description', '')}
-URL: {finding.get('url', '')}
-Severity: {finding.get('severity', 'info')}
-Technology: {finding.get('evidence', 'N/A')}
+Name: {finding.get("name", "Unknown")}
+Description: {finding.get("description", "")}
+URL: {finding.get("url", "")}
+Severity: {finding.get("severity", "info")}
+Technology: {finding.get("evidence", "N/A")}
 
 Give actionable steps including code examples if relevant."""
 
@@ -120,8 +134,7 @@ Give actionable steps including code examples if relevant."""
 
     async def map_attack_path(self, findings: list[dict], target: str) -> list[dict]:
         findings_summary = "\n".join(
-            f"- {f.get('name')} ({f.get('severity')}) on {f.get('url', target)}"
-            for f in findings[:15]
+            f"- {f.get('name')} ({f.get('severity')}) on {f.get('url', target)}" for f in findings[:15]
         )
         prompt = f"""Given these vulnerabilities discovered on {target}, identify possible attack chains:
 
@@ -168,14 +181,20 @@ Highlight the most critical risks and recommend next steps."""
                 t = item.get("type", "")
                 if t == "pipeline":
                     steps_summary = "; ".join(
-                        f"{s.get('label','?')}: {s.get('status','?')} ({s.get('finding_count',0)} findings)"
+                        f"{s.get('label', '?')}: {s.get('status', '?')} ({s.get('finding_count', 0)} findings)"
                         for s in item.get("steps", [])
                     )
-                    parts.append(f"[Pipeline] {item.get('name','?')} target={item.get('target','?')} status={item.get('status','?')} | {steps_summary}")
+                    parts.append(
+                        f"[Pipeline] {item.get('name', '?')} target={item.get('target', '?')} status={item.get('status', '?')} | {steps_summary}"
+                    )
                 elif t in ("web_scan", "link_scan", "network_scan", "noir_audit"):
-                    parts.append(f"[{t}] target={item.get('target','?')} findings={item.get('findings',0)} sources={item.get('sources','?')}")
+                    parts.append(
+                        f"[{t}] target={item.get('target', '?')} findings={item.get('findings', 0)} sources={item.get('sources', '?')}"
+                    )
                 else:
-                    parts.append(f"- {item.get('name', '?')} ({item.get('severity', '?')}): {str(item.get('description', ''))[:100]}")
+                    parts.append(
+                        f"- {item.get('name', '?')} ({item.get('severity', '?')}): {str(item.get('description', ''))[:100]}"
+                    )
             ctx = "\n\nCurrent context:\n" + "\n".join(parts)
 
         prompt = f"User question: {message}{ctx}"

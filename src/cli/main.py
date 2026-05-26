@@ -9,12 +9,12 @@ from typing import Optional
 
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.table import Table
 from rich.text import Text
 
 from src.scanner.engine import ScanEngine
-from src.scanner.models import ScanTarget, ScanStatus, Severity
+from src.scanner.models import ScanStatus, ScanTarget, Severity
 from src.scanner.reporter import Reporter
 
 console = Console()
@@ -45,8 +45,19 @@ Examples:
     parser.add_argument("url", nargs="?", help="Target URL to scan")
     parser.add_argument("--checks", "-c", help="Comma-separated list of checks to run (default: all)")
     parser.add_argument("--output", "-o", help="Output file path for the report")
-    parser.add_argument("--format", "-f", choices=["html", "json", "markdown"], default="html", help="Report format (default: html)")
-    parser.add_argument("--list-checks", "-l", action="store_true", help="List available checks and exit")
+    parser.add_argument(
+        "--format",
+        "-f",
+        choices=["html", "json", "markdown"],
+        default="html",
+        help="Report format (default: html)",
+    )
+    parser.add_argument(
+        "--list-checks",
+        "-l",
+        action="store_true",
+        help="List available checks and exit",
+    )
     parser.add_argument("--max-pages", type=int, default=10, help="Maximum pages to scan (default: 10)")
     parser.add_argument("--no-redirect", action="store_true", help="Do not follow redirects")
     parser.add_argument("--version", "-v", action="version", version="VulnScout 0.1.0")
@@ -120,12 +131,12 @@ def _print_results(result):
         if v.evidence:
             content.append(f"  Evidence: {v.evidence}\n", style="italic")
 
-        content.append(f"\n  Remediation:\n", style="bold green")
+        content.append("\n  Remediation:\n", style="bold green")
         for line in v.remediation.split("\n"):
             content.append(f"    {line}\n")
 
         if v.references:
-            content.append(f"\n  References:\n", style="dim")
+            content.append("\n  References:\n", style="dim")
             for ref in v.references:
                 content.append(f"    {ref}\n")
 

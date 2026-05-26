@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from src.gui.main import build_layout, _format_results
-from src.scanner.models import ScanResult, ScanTarget, ScanStatus, Severity, CheckResult
 from datetime import datetime, timedelta
+
+from src.gui.main import _format_results, build_layout
+from src.scanner.models import CheckResult, ScanResult, ScanStatus, ScanTarget, Severity
 
 
 def test_build_layout():

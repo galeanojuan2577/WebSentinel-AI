@@ -42,7 +42,7 @@ class NoirScanner:
         extract_to = os.path.join(ext_dir, "src")
         os.makedirs(extract_to, exist_ok=True)
 
-        with zipfile.ZipFile(zip_path, 'r') as zf:
+        with zipfile.ZipFile(zip_path, "r") as zf:
             zf.extractall(extract_to)
 
         if os.path.isfile(zip_path):
@@ -57,7 +57,11 @@ class NoirScanner:
         cmd = [self.noir_path, "-b", project_path, "-f", output_format]
         logger.info(f"Ejecutando Noir: {' '.join(cmd)}")
         return subprocess.run(
-            cmd, capture_output=True, text=True, timeout=180, cwd=project_path,
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            cwd=project_path,
         )
 
     def _extract_archive(self, path: str) -> str | None:
@@ -69,23 +73,31 @@ class NoirScanner:
         try:
             if ext.endswith(".zip"):
                 import zipfile
-                with zipfile.ZipFile(path, 'r') as zf:
+
+                with zipfile.ZipFile(path, "r") as zf:
                     zf.extractall(out_dir)
             elif ext.endswith(".tar.gz") or ext.endswith(".tgz"):
                 import tarfile
-                with tarfile.open(path, 'r:gz') as tf:
+
+                with tarfile.open(path, "r:gz") as tf:
                     tf.extractall(out_dir)
             elif ext.endswith(".tar.bz2"):
                 import tarfile
-                with tarfile.open(path, 'r:bz2') as tf:
+
+                with tarfile.open(path, "r:bz2") as tf:
                     tf.extractall(out_dir)
             elif ext.endswith(".tar"):
                 import tarfile
-                with tarfile.open(path, 'r:') as tf:
+
+                with tarfile.open(path, "r:") as tf:
                     tf.extractall(out_dir)
             elif ext.endswith(".7z"):
-                result = subprocess.run(["7z", "x", path, f"-o{out_dir}", "-y"],
-                                        capture_output=True, text=True, timeout=60)
+                result = subprocess.run(
+                    ["7z", "x", path, f"-o{out_dir}", "-y"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
                 if result.returncode != 0:
                     logger.warning(f"7z extraction failed: {result.stderr[:200]}")
                     shutil.rmtree(out_dir, ignore_errors=True)
@@ -147,7 +159,12 @@ class NoirScanner:
                     self._progress(95, "Parseando endpoints...")
                     return parsed
                 except json.JSONDecodeError:
-                    return {"raw_output": result.stdout, "error": result.stderr, "endpoints": [], "summary": {}}
+                    return {
+                        "raw_output": result.stdout,
+                        "error": result.stderr,
+                        "endpoints": [],
+                        "summary": {},
+                    }
             else:
                 return {"raw_output": result.stdout, "stderr": result.stderr}
 
@@ -164,7 +181,7 @@ class NoirScanner:
     def parse_results(self, noir_output: dict) -> list[CheckResult]:
         results = []
         endpoints = noir_output.get("endpoints", noir_output.get("paths", []))
-        
+
         if isinstance(endpoints, list):
             for endpoint in endpoints:
                 if isinstance(endpoint, dict):
@@ -172,32 +189,62 @@ class NoirScanner:
                     method = endpoint.get("method", "GET").upper()
                     params = endpoint.get("params", [])
                     tech = endpoint.get("details", {}).get("technology", "unknown")
-                    
+
                     if not path:
                         continue
-                    
-                    is_sensitive = any(x in path.lower() for x in ["admin", "internal", "debug", "secret", "config", "backup", "console", "swagger", "docs", "api", "private", "hidden"])
+
+                    is_sensitive = any(
+                        x in path.lower()
+                        for x in [
+                            "admin",
+                            "internal",
+                            "debug",
+                            "secret",
+                            "config",
+                            "backup",
+                            "console",
+                            "swagger",
+                            "docs",
+                            "api",
+                            "private",
+                            "hidden",
+                        ]
+                    )
                     severity = Severity.HIGH if is_sensitive else Severity.INFO
-                    
-                    results.append(CheckResult(
-                        name=f"Endpoint: {method} {path}",
-                        description=f"Endpoint detectado por Noir via {tech}. {'POSIBLE SHADOW API o endpoint sensible.' if is_sensitive else 'Endpoint registrado en la aplicación.'}",
-                        severity=severity,
-                        url=path,
-                        evidence=f"Method: {method}, Path: {path}, Params: {params}, Technology: {tech}",
-                        remediation="1. Revisar si este endpoint está documentado y autorizado.\n2. Asegurar autenticación y control de acceso.\n3. Verificar que no exponga datos sensibles." if is_sensitive else "Endpoint documentado. Verificar configuración de seguridad.",
-                        references=["https://owasp.org/www-project-web-security-testing-guide/"],
-                    ))
+
+                    results.append(
+                        CheckResult(
+                            name=f"Endpoint: {method} {path}",
+                            description=f"Endpoint detectado por Noir via {tech}. {'POSIBLE SHADOW API o endpoint sensible.' if is_sensitive else 'Endpoint registrado en la aplicación.'}",
+                            severity=severity,
+                            url=path,
+                            evidence=f"Method: {method}, Path: {path}, Params: {params}, Technology: {tech}",
+                            remediation="1. Revisar si este endpoint está documentado y autorizado.\n2. Asegurar autenticación y control de acceso.\n3. Verificar que no exponga datos sensibles."
+                            if is_sensitive
+                            else "Endpoint documentado. Verificar configuración de seguridad.",
+                            references=["https://owasp.org/www-project-web-security-testing-guide/"],
+                        )
+                    )
 
         return results
 
     def generate_report(self, findings: list[CheckResult], output_format: str = "html") -> str:
         if output_format == "json":
-            return json.dumps([f.model_dump(mode="json") for f in findings], indent=2, ensure_ascii=False)
-        
+            return json.dumps(
+                [f.model_dump(mode="json") for f in findings],
+                indent=2,
+                ensure_ascii=False,
+            )
+
         findings_html = ""
         for i, f in enumerate(findings, 1):
-            color = {"critical": "#dc2626", "high": "#ea580c", "medium": "#ca8a04", "low": "#2563eb", "info": "#6b7280"}.get(f.severity.value, "#6b7280")
+            color = {
+                "critical": "#dc2626",
+                "high": "#ea580c",
+                "medium": "#ca8a04",
+                "low": "#2563eb",
+                "info": "#6b7280",
+            }.get(f.severity.value, "#6b7280")
             findings_html += f"""
             <div class="finding" style="border-left:4px solid {color};">
                 <div class="finding-header">
@@ -208,7 +255,7 @@ class NoirScanner:
                 <p class="finding-url"><strong>URL:</strong> <code>{f.url}</code></p>
                 <p>{f.description}</p>
                 <div class="remediation"><strong>Remediation:</strong><pre>{f.remediation}</pre></div>
-                {f'<div class="evidence"><strong>Evidence:</strong><pre>{f.evidence}</pre></div>' if f.evidence else ''}
+                {f'<div class="evidence"><strong>Evidence:</strong><pre>{f.evidence}</pre></div>' if f.evidence else ""}
             </div>"""
 
         return f"""<!DOCTYPE html>
@@ -246,13 +293,13 @@ body {{font-family:'Inter','Segoe UI',sans-serif;background:#0a0e17;color:#e2e8f
 .footer {{text-align:center;color:#475569;font-size:12px;margin-top:32px}}
 </style></head>
 <body><div class="container">
-<div class="header"><h1>VulnScout Report</h1><div class="meta"><p>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p><p>Total findings: {len(findings)}</p></div></div>
+<div class="header"><h1>VulnScout Report</h1><div class="meta"><p>Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</p><p>Total findings: {len(findings)}</p></div></div>
 <div class="summary"><h2>Summary</h2><div class="stats">
-<div class="stat"><div class="stat-value">{sum(1 for f in findings if f.severity.value == 'critical')}</div><div class="stat-label">Critical</div></div>
-<div class="stat"><div class="stat-value">{sum(1 for f in findings if f.severity.value == 'high')}</div><div class="stat-label">High</div></div>
-<div class="stat"><div class="stat-value">{sum(1 for f in findings if f.severity.value == 'medium')}</div><div class="stat-label">Medium</div></div>
-<div class="stat"><div class="stat-value">{sum(1 for f in findings if f.severity.value == 'low')}</div><div class="stat-label">Low</div></div>
-<div class="stat"><div class="stat-value">{sum(1 for f in findings if f.severity.value == 'info')}</div><div class="stat-label">Info</div></div>
+<div class="stat"><div class="stat-value">{sum(1 for f in findings if f.severity.value == "critical")}</div><div class="stat-label">Critical</div></div>
+<div class="stat"><div class="stat-value">{sum(1 for f in findings if f.severity.value == "high")}</div><div class="stat-label">High</div></div>
+<div class="stat"><div class="stat-value">{sum(1 for f in findings if f.severity.value == "medium")}</div><div class="stat-label">Medium</div></div>
+<div class="stat"><div class="stat-value">{sum(1 for f in findings if f.severity.value == "low")}</div><div class="stat-label">Low</div></div>
+<div class="stat"><div class="stat-value">{sum(1 for f in findings if f.severity.value == "info")}</div><div class="stat-label">Info</div></div>
 </div></div>
 <div class="findings"><h2>Detailed Findings</h2>{findings_html}</div>
 <div class="footer"><p>Generated by VulnScout Security Platform</p></div>

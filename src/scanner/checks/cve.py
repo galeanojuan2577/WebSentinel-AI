@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
 
 import httpx
 
@@ -26,15 +25,20 @@ class CVECheck(BaseCheck):
                 cves = await self._search_cve(tech, client)
                 for cve in cves:
                     cvss = self._parse_cvss(cve)
-                    results.append(CheckResult(
-                        name=f"CVE: {cve['id']} — {tech}",
-                        description=cve.get("description", f"Vulnerabilidad publicada relacionada con {tech}."),
-                        severity=self._cvss_to_severity(cvss),
-                        url=url,
-                        evidence=f"Tecnología afectada: {tech} | CVSS v3: {cvss} | Publicado: {cve.get('published', 'N/A')}",
-                        remediation=f"Actualizar {tech} a la versión más reciente. Referencia oficial: https://nvd.nist.gov/vuln/detail/{cve['id']}",
-                        references=[f"https://nvd.nist.gov/vuln/detail/{cve['id']}"],
-                    ))
+                    results.append(
+                        CheckResult(
+                            name=f"CVE: {cve['id']} — {tech}",
+                            description=cve.get(
+                                "description",
+                                f"Vulnerabilidad publicada relacionada con {tech}.",
+                            ),
+                            severity=self._cvss_to_severity(cvss),
+                            url=url,
+                            evidence=f"Tecnología afectada: {tech} | CVSS v3: {cvss} | Publicado: {cve.get('published', 'N/A')}",
+                            remediation=f"Actualizar {tech} a la versión más reciente. Referencia oficial: https://nvd.nist.gov/vuln/detail/{cve['id']}",
+                            references=[f"https://nvd.nist.gov/vuln/detail/{cve['id']}"],
+                        )
+                    )
         except Exception as e:
             logger.warning(f"CVE lookup failed: {e}")
 
@@ -51,11 +55,19 @@ class CVECheck(BaseCheck):
             if "x-powered-by" in h:
                 techs.append(h["x-powered-by"])
             sigs = {
-                "nginx": "nginx", "apache": "Apache", "iis": "IIS",
-                "php": "PHP", "django": "Django", "laravel": "Laravel",
-                "wordpress": "WordPress", "drupal": "Drupal",
-                "express": "Express.js", "flask": "Flask", "rails": "Ruby on Rails",
-                "tomcat": "Apache Tomcat", "jetty": "Eclipse Jetty",
+                "nginx": "nginx",
+                "apache": "Apache",
+                "iis": "IIS",
+                "php": "PHP",
+                "django": "Django",
+                "laravel": "Laravel",
+                "wordpress": "WordPress",
+                "drupal": "Drupal",
+                "express": "Express.js",
+                "flask": "Flask",
+                "rails": "Ruby on Rails",
+                "tomcat": "Apache Tomcat",
+                "jetty": "Eclipse Jetty",
             }
             for sig, name in sigs.items():
                 if sig in text:
@@ -91,12 +103,14 @@ class CVECheck(BaseCheck):
                     or {}
                 )
                 published = cve.get("published", "")[:10]
-                result.append({
-                    "id": cve_id,
-                    "description": desc[:500],
-                    "cvss": cvss_data.get("baseScore", "N/A"),
-                    "published": published,
-                })
+                result.append(
+                    {
+                        "id": cve_id,
+                        "description": desc[:500],
+                        "cvss": cvss_data.get("baseScore", "N/A"),
+                        "published": published,
+                    }
+                )
             return result
         except Exception as e:
             logger.debug(f"NVD search failed for {tech}: {e}")

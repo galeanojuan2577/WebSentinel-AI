@@ -8,22 +8,48 @@ from src.scanner.checks.base import BaseCheck
 from src.scanner.models import CheckResult, Severity
 
 COMMON_PATHS = [
-    "/admin", "/administrator", "/login",
-    "/wp-admin", "/wp-login.php",
-    "/backup", "/backups",
-    "/.env", "/.git/config",
-    "/config", "/config.php", "/db", "/database",
-    "/phpinfo.php", "/info.php", "/test",
-    "/api", "/api/v1", "/swagger", "/docs",
+    "/admin",
+    "/administrator",
+    "/login",
+    "/wp-admin",
+    "/wp-login.php",
+    "/backup",
+    "/backups",
+    "/.env",
+    "/.git/config",
+    "/config",
+    "/config.php",
+    "/db",
+    "/database",
+    "/phpinfo.php",
+    "/info.php",
+    "/test",
+    "/api",
+    "/api/v1",
+    "/swagger",
+    "/docs",
     "/.well-known/security.txt",
-    "/robots.txt", "/sitemap.xml", "/crossdomain.xml",
-    "/shell", "/cmd",
-    "/upload", "/uploads", "/files", "/download",
-    "/private", "/restore",
-    "/.htaccess", "/server-status", "/server-info",
+    "/robots.txt",
+    "/sitemap.xml",
+    "/crossdomain.xml",
+    "/shell",
+    "/cmd",
+    "/upload",
+    "/uploads",
+    "/files",
+    "/download",
+    "/private",
+    "/restore",
+    "/.htaccess",
+    "/server-status",
+    "/server-info",
     "/graphql",
-    "/.aws/credentials", "/.ssh",
-    "/vendor", "/composer.json", "/package.json", "/Dockerfile",
+    "/.aws/credentials",
+    "/.ssh",
+    "/vendor",
+    "/composer.json",
+    "/package.json",
+    "/Dockerfile",
 ]
 
 SENSITIVE_PATTERNS = {
@@ -37,8 +63,8 @@ SENSITIVE_PATTERNS = {
 }
 
 _SPA_MARKERS = [
-    "<div id=\"root\">",
-    "<div id=\"app\">",
+    '<div id="root">',
+    '<div id="app">',
     "reactroot",
     "ng-version",
     "__nuxt",
@@ -46,9 +72,16 @@ _SPA_MARKERS = [
 ]
 
 _NON_HTML_PATHS = {
-    "/.env", "/.git/config", "/.aws/credentials", "/.ssh",
-    "/backup", "/backups",
-    "/config", "/composer.json", "/package.json", "/Dockerfile",
+    "/.env",
+    "/.git/config",
+    "/.aws/credentials",
+    "/.ssh",
+    "/backup",
+    "/backups",
+    "/config",
+    "/composer.json",
+    "/package.json",
+    "/Dockerfile",
     "/.htaccess",
 }
 
@@ -105,27 +138,41 @@ class DirectoriesCheck(BaseCheck):
                             continue
 
                         if path in _NON_HTML_PATHS and _token_overlap(body, root_body) > 0.7:
-                            results.append(CheckResult(
-                                name="SPA Catch-All Route",
-                                description=f"La ruta '{path}' devuelve 200 con la página del SPA, no un archivo real (catch-all routing).",
-                                severity=Severity.INFO,
-                                url=test_url,
-                                remediation="Configurar el servidor para que devuelva 404 en rutas que no correspondan a archivos reales.",
-                            ))
+                            results.append(
+                                CheckResult(
+                                    name="SPA Catch-All Route",
+                                    description=f"La ruta '{path}' devuelve 200 con la página del SPA, no un archivo real (catch-all routing).",
+                                    severity=Severity.INFO,
+                                    url=test_url,
+                                    remediation="Configurar el servidor para que devuelva 404 en rutas que no correspondan a archivos reales.",
+                                )
+                            )
                             continue
 
                     if not body.strip():
-                        results.append(CheckResult(
-                            name="Empty Response",
-                            description=f"La ruta '{path}' devuelve HTTP 200 pero el body está vacío.",
-                            severity=Severity.INFO,
-                            url=test_url,
-                            remediation="Verificar que no haya contenido sensible en esta ruta.",
-                        ))
+                        results.append(
+                            CheckResult(
+                                name="Empty Response",
+                                description=f"La ruta '{path}' devuelve HTTP 200 pero el body está vacío.",
+                                severity=Severity.INFO,
+                                url=test_url,
+                                remediation="Verificar que no haya contenido sensible en esta ruta.",
+                            )
+                        )
                         continue
 
                     severity = Severity.MEDIUM
-                    if any(sens in path for sens in (".env", ".git", ".aws", ".ssh", "backup", "backups")):
+                    if any(
+                        sens in path
+                        for sens in (
+                            ".env",
+                            ".git",
+                            ".aws",
+                            ".ssh",
+                            "backup",
+                            "backups",
+                        )
+                    ):
                         severity = Severity.HIGH
 
                     evidence = None
@@ -135,25 +182,31 @@ class DirectoriesCheck(BaseCheck):
                         evidence = f"Sensitive patterns detected: {', '.join(matched_patterns)}"
                         severity = Severity.HIGH
 
-                    results.append(CheckResult(
-                        name="Exposed Path",
-                        description=f"La ruta '{path}' es accesible públicamente (HTTP {resp.status_code}).",
-                        severity=severity,
-                        url=test_url,
-                        evidence=evidence,
-                        remediation="1. Eliminar archivos sensibles del servidor web.\n"
-                                    "2. Configurar reglas de denegación en el servidor web.\n"
-                                    "3. No incluir archivos de configuración, backups o .git en el directorio público.",
-                        references=["https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/"],
-                    ))
+                    results.append(
+                        CheckResult(
+                            name="Exposed Path",
+                            description=f"La ruta '{path}' es accesible públicamente (HTTP {resp.status_code}).",
+                            severity=severity,
+                            url=test_url,
+                            evidence=evidence,
+                            remediation="1. Eliminar archivos sensibles del servidor web.\n"
+                            "2. Configurar reglas de denegación en el servidor web.\n"
+                            "3. No incluir archivos de configuración, backups o .git en el directorio público.",
+                            references=[
+                                "https://owasp.org/www-project-web-security-testing-guide/stable/4-Web_Application_Security_Testing/"
+                            ],
+                        )
+                    )
                 elif resp.status_code in (401, 403):
-                    results.append(CheckResult(
-                        name="Protected Path (requires auth)",
-                        description=f"La ruta '{path}' está protegida (HTTP {resp.status_code}). Puede ser un panel administrativo.",
-                        severity=Severity.LOW,
-                        url=test_url,
-                        remediation="Verificar que el acceso esté correctamente restringido y que no haya vulnerabilidades de autenticación.",
-                    ))
+                    results.append(
+                        CheckResult(
+                            name="Protected Path (requires auth)",
+                            description=f"La ruta '{path}' está protegida (HTTP {resp.status_code}). Puede ser un panel administrativo.",
+                            severity=Severity.LOW,
+                            url=test_url,
+                            remediation="Verificar que el acceso esté correctamente restringido y que no haya vulnerabilidades de autenticación.",
+                        )
+                    )
             except (httpx.TimeoutException, httpx.RequestError):
                 continue
 

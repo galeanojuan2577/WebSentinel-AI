@@ -12,5 +12,4 @@ class BaseCheck(ABC):
     description: str = ""
 
     @abstractmethod
-    async def run(self, url: str, client: httpx.AsyncClient) -> list[CheckResult]:
-        ...
+    async def run(self, url: str, client: httpx.AsyncClient) -> list[CheckResult]: ...

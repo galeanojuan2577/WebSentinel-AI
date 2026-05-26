@@ -18,9 +18,17 @@ async def test_directories_check_finds_real_exposed_content():
         if path in ("/.env",):
             return httpx.Response(200, text="DB_PASSWORD=secret", headers={"content-type": "text/plain"})
         if path in ("/backup",):
-            return httpx.Response(200, text="backup_data_2024.sql", headers={"content-type": "application/octet-stream"})
+            return httpx.Response(
+                200,
+                text="backup_data_2024.sql",
+                headers={"content-type": "application/octet-stream"},
+            )
         if path in ("/.git/config",):
-            return httpx.Response(200, text="[core]\n\trepositoryformatversion = 0", headers={"content-type": "text/plain"})
+            return httpx.Response(
+                200,
+                text="[core]\n\trepositoryformatversion = 0",
+                headers={"content-type": "text/plain"},
+            )
         return httpx.Response(404, text="Not Found")
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
@@ -37,7 +45,7 @@ async def test_directories_check_filters_spa_fallback():
     check = DirectoriesCheck()
     spa_html = (
         "<!DOCTYPE html><html><head><title>My App</title></head>"
-        "<body><div id=\"root\"></div><script src=\"/assets/index.js\"></script>"
+        '<body><div id="root"></div><script src="/assets/index.js"></script>'
         "</body></html>"
     )
 
@@ -56,10 +64,7 @@ async def test_directories_check_filters_spa_fallback():
 async def test_directories_check_non_html_paths_in_spa():
     """Non-HTML paths (like /.env, /backup) in SPAs should be flagged as catch-all."""
     check = DirectoriesCheck()
-    base = (
-        "<html><head><title>App</title></head>"
-        "<body><div id=\"root\"></div></body></html>"
-    )
+    base = '<html><head><title>App</title></head><body><div id="root"></div></body></html>'
 
     async def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -73,7 +78,14 @@ async def test_directories_check_non_html_paths_in_spa():
     spa_routes = [r for r in results if r.name == "SPA Catch-All Route"]
     assert len(spa_routes) > 0
 
-    non_html_paths = {"/.env", "/.git/config", "/.aws/credentials", "/.ssh", "/backup", "/backups"}
+    non_html_paths = {
+        "/.env",
+        "/.git/config",
+        "/.aws/credentials",
+        "/.ssh",
+        "/backup",
+        "/backups",
+    }
     for r in results:
         for np in non_html_paths:
             if np in r.url and r.name == "Exposed Path":
@@ -85,17 +97,23 @@ async def test_directories_check_real_html_pages_in_spa_not_filtered():
     """Normal-looking HTML paths (like /admin, /login) in SPAs should still be
     reported when they're real pages, not just the SPA shell."""
     check = DirectoriesCheck()
-    spa_shell = "<html><head><title>App</title></head><body><div id=\"root\"></div></body></html>"
+    spa_shell = '<html><head><title>App</title></head><body><div id="root"></div></body></html>'
 
     async def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
         if path == "/" or path == "":
             return httpx.Response(200, text=spa_shell, headers={"content-type": "text/html"})
         if path in ("/admin", "/login"):
-            return httpx.Response(200, text="<html><body><h1>Admin Panel</h1><form>login</form></body></html>",
-                                  headers={"content-type": "text/html"})
-        return httpx.Response(200, text=spa_shell + f"<script>route/{path}</script>",
-                              headers={"content-type": "text/html"})
+            return httpx.Response(
+                200,
+                text="<html><body><h1>Admin Panel</h1><form>login</form></body></html>",
+                headers={"content-type": "text/html"},
+            )
+        return httpx.Response(
+            200,
+            text=spa_shell + f"<script>route/{path}</script>",
+            headers={"content-type": "text/html"},
+        )
 
     client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     results = await check.run("https://example.com", client)

@@ -1,16 +1,14 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 import queue
-import os
+import threading
 from datetime import datetime
 
 import FreeSimpleGUI as sg
 
 from src.scanner.engine import ScanEngine
 from src.scanner.models import ScanTarget
-from src.scanner.reporter import Reporter
 
 SEVERITY_COLORS = {
     "critical": ("#dc2626", "CRITICAL"),
@@ -26,12 +24,23 @@ sg.theme("DarkBlue3")
 def build_layout():
     return [
         [sg.Text("VulnScout", font=("Helvetica", 18, "bold"), text_color="#2d5a87")],
-        [sg.Text("Web Vulnerability Scanner", font=("Helvetica", 10), text_color="#6b7280")],
+        [
+            sg.Text(
+                "Web Vulnerability Scanner",
+                font=("Helvetica", 10),
+                text_color="#6b7280",
+            )
+        ],
         [sg.HorizontalSeparator()],
         [
             sg.Text("Target URL:", font=("Helvetica", 11)),
             sg.Input(key="-URL-", font=("Helvetica", 11), expand_x=True),
-            sg.Button("Start Scan", key="-SCAN-", font=("Helvetica", 11, "bold"), button_color=("white", "#2563eb")),
+            sg.Button(
+                "Start Scan",
+                key="-SCAN-",
+                font=("Helvetica", 11, "bold"),
+                button_color=("white", "#2563eb"),
+            ),
         ],
         [sg.HorizontalSeparator()],
         [
@@ -45,10 +54,25 @@ def build_layout():
         [
             sg.Text("Results", font=("Helvetica", 12, "bold")),
             sg.Push(),
-            sg.Button("Save Report", key="-SAVE-", font=("Helvetica", 10), visible=False, button_color=("white", "#059669")),
+            sg.Button(
+                "Save Report",
+                key="-SAVE-",
+                font=("Helvetica", 10),
+                visible=False,
+                button_color=("white", "#059669"),
+            ),
             sg.Button("Clear", key="-CLEAR-", font=("Helvetica", 10)),
         ],
-        [sg.Multiline(key="-RESULTS-", font=("Courier", 10), size=(100, 25), expand_x=True, expand_y=True, autoscroll=True)],
+        [
+            sg.Multiline(
+                key="-RESULTS-",
+                font=("Courier", 10),
+                size=(100, 25),
+                expand_x=True,
+                expand_y=True,
+                autoscroll=True,
+            )
+        ],
         [sg.HorizontalSeparator()],
         [sg.Text("VulnScout v0.1.0", font=("Helvetica", 8), text_color="#9ca3af")],
     ]
@@ -85,19 +109,19 @@ def _format_results(result) -> str:
     summary = result.summary
     total = sum(summary.values())
 
-    lines.append(f"{'='*60}")
-    lines.append(f"  VULNSCOUT REPORT")
+    lines.append(f"{'=' * 60}")
+    lines.append("  VULNSCOUT REPORT")
     lines.append(f"  Target: {result.target.url}")
     lines.append(f"  Scan ID: {result.scan_id}")
     if result.duration_seconds is not None:
         lines.append(f"  Duration: {result.duration_seconds:.1f}s")
     lines.append(f"  URLs Scanned: {result.total_urls_scanned}")
     lines.append(f"  Total Findings: {total}")
-    lines.append(f"{'='*60}")
+    lines.append(f"{'=' * 60}")
     lines.append("")
 
     lines.append("  SUMMARY")
-    lines.append(f"  {'─'*40}")
+    lines.append(f"  {'─' * 40}")
     severity_order = ["critical", "high", "medium", "low", "info"]
     for sev in severity_order:
         count = summary.get(sev, 0)
@@ -111,21 +135,21 @@ def _format_results(result) -> str:
 
     for i, v in enumerate(result.vulnerabilities, 1):
         color, label = SEVERITY_COLORS.get(v.severity.value, ("#6b7280", v.severity.value.upper()))
-        lines.append(f"  {'─'*60}")
+        lines.append(f"  {'─' * 60}")
         lines.append(f"  [{label}] {v.name}")
         lines.append(f"  URL: {v.url}")
         lines.append(f"  {v.description}")
         lines.append("")
         if v.evidence:
-            lines.append(f"  Evidence:")
+            lines.append("  Evidence:")
             lines.append(f"    {v.evidence}")
             lines.append("")
-        lines.append(f"  Remediation:")
+        lines.append("  Remediation:")
         for line in v.remediation.strip().split("\n"):
             lines.append(f"    {line.strip()}")
         lines.append("")
         if v.references:
-            lines.append(f"  References:")
+            lines.append("  References:")
             for ref in v.references:
                 lines.append(f"    {ref}")
         lines.append("")
