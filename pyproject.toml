@@ -23,6 +23,9 @@ dev = [
     "black>=24.0",
     "ruff>=0.4",
     "mypy>=1.8",
+    "types-python-jose",
+    "FreeSimpleGUI>=0.43",
+    "dnspython>=2.0",
 ]
 api = [
     "fastapi>=0.110",

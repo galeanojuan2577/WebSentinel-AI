@@ -8,7 +8,7 @@ import zipfile
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import (
     APIRouter,
@@ -44,6 +44,7 @@ from src.api.db_models import User as DBUser
 from src.orchestrator.pipeline import (
     PipelineRequest,
     PipelineState,
+    PipelineStatus,
     StepResult,
     _build_default_pipeline,
     get_pipeline,
@@ -114,7 +115,7 @@ async def _save_scan_to_db(
                 for f in findings:
                     sev = f.get("severity", "info")
                     sev_counts[sev] = sev_counts.get(sev, 0) + 1
-                db_scan.severity_summary = sev_counts
+                db_scan.severity_summary = sev_counts  # type: ignore[assignment]
                 for f in findings:
                     db_scan.findings.append(
                         DBFinding(
@@ -259,7 +260,7 @@ async def health():
 async def login(req: LoginRequest, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(DBUser).where(DBUser.username == req.username))
     user = result.scalar_one_or_none()
-    if not user or not verify_password(req.password, user.hashed_password):
+    if not user or not verify_password(req.password, str(user.hashed_password)):  # type: ignore[arg-type]
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = create_access_token({"sub": user.username})
     return TokenResponse(access_token=token)
@@ -747,13 +748,13 @@ async def generate_report(scan_id: str, format: str = Query("html", pattern="^(h
         if isinstance(f, dict):
             check_results.append(
                 CheckResult(
-                    name=f.get("name", "Unknown"),
-                    description=f.get("description", ""),
-                    severity=Severity(f.get("severity", "info")),
-                    url=f.get("url", target_url),
-                    evidence=f.get("evidence"),
-                    remediation=f.get("remediation", ""),
-                    references=f.get("references", []),
+                    name=str(f.get("name", "Unknown")),
+                    description=str(f.get("description", "")),
+                    severity=Severity(str(f.get("severity", "info"))),
+                    url=str(f.get("url", target_url)),
+                    evidence=str(f.get("evidence") or ""),
+                    remediation=str(f.get("remediation", "")),
+                    references=f.get("references") or [],
                 )
             )
 
@@ -782,7 +783,7 @@ async def create_pipeline(req: PipelineRequest):
         pipeline_id=pipeline_id,
         name=req.name,
         target=req.target,
-        status="running",
+        status=PipelineStatus.RUNNING,
         steps=[
             StepResult(
                 step_id=f"{pipeline_id}_{i}",
@@ -843,12 +844,12 @@ async def cancel_pipeline(pipeline_id: str):
     state = get_pipeline(pipeline_id)
     if state is None:
         raise HTTPException(status_code=404, detail="Pipeline not found")
-    if state.status in ("completed", "failed", "cancelled"):
+    if state.status in (PipelineStatus.COMPLETED, PipelineStatus.FAILED, PipelineStatus.CANCELLED):
         return {"status": "already_done", "pipeline_status": state.status}
     task = pipeline_tasks.get(pipeline_id)
     if task and not task.done():
         task.cancel()
-    state.status = "cancelled"
+    state.status = PipelineStatus.CANCELLED
     return {"status": "cancelled", "pipeline_id": pipeline_id}
 
 
@@ -877,12 +878,12 @@ async def update_finding_status(finding_id: str, req: FindingStatusUpdate, db: A
         finding = result.scalar_one_or_none()
         if not finding:
             raise HTTPException(status_code=404, detail="Finding not found")
-        old_status = finding.status or "open"
-        finding.status = req.status
+        old_status: str = finding.status or "open"  # type: ignore[assignment]
+        finding.status = req.status  # type: ignore[assignment]
         if req.status == "fixed":
-            finding.resolved_at = datetime.now()
+            finding.resolved_at = datetime.now()  # type: ignore[assignment]
         elif old_status != "open" and req.status == "open":
-            finding.resolved_at = None
+            finding.resolved_at = None  # type: ignore[assignment]
         await session.commit()
         await session.refresh(finding)
     return {"id": finding_id, "status": req.status}
@@ -1023,7 +1024,14 @@ async def pipeline_report(pipeline_id: str, format: str = Query("json")):
         if sev in severity_counts:
             severity_counts[sev] += 1
 
-    report = {
+    summary: dict[str, int | dict[str, int]] = {
+        "total_steps": len(state.steps),
+        "completed_steps": sum(1 for s in state.steps if s.status == "completed"),
+        "failed_steps": sum(1 for s in state.steps if s.status == "failed"),
+        "total_findings": total,
+        "severity_counts": severity_counts,
+    }
+    report: dict[str, Any] = {
         "pipeline_id": pipeline_id,
         "name": state.name,
         "target": state.target,
@@ -1032,13 +1040,7 @@ async def pipeline_report(pipeline_id: str, format: str = Query("json")):
         "duration_seconds": (
             (state.finished_at - state.created_at).total_seconds() if state.finished_at and state.created_at else None
         ),
-        "summary": {
-            "total_steps": len(state.steps),
-            "completed_steps": sum(1 for s in state.steps if s.status == "completed"),
-            "failed_steps": sum(1 for s in state.steps if s.status == "failed"),
-            "total_findings": total,
-            "severity_counts": severity_counts,
-        },
+        "summary": summary,
         "steps": step_summaries,
     }
 
@@ -1053,8 +1055,8 @@ async def pipeline_report(pipeline_id: str, format: str = Query("json")):
             "",
         ]
         lines.append("## Step Summary")
-        for s in step_summaries:
-            lines.append(f"- **{s['step']}** ({s['type']}): {s['status']} — {s['finding_count']} findings")
+        for ss in step_summaries:
+            lines.append(f"- **{ss['step']}** ({ss['type']}): {ss['status']} — {ss['finding_count']} findings")
         lines.append("")
         lines.append("## Severity Breakdown")
         for sev, cnt in severity_counts.items():
@@ -1068,11 +1070,11 @@ async def pipeline_report(pipeline_id: str, format: str = Query("json")):
         if cnt > 0
     )
     steps_html = "".join(
-        f"<tr><td style='padding:8px;border-bottom:1px solid #1e2d45;color:#e2e8f0;font-size:13px'>{s['step']}</td>"
-        f"<td style='padding:8px;border-bottom:1px solid #1e2d45;color:#64748b;font-size:12px'>{s['type']}</td>"
-        f"<td style='padding:8px;border-bottom:1px solid #1e2d45'><span style='padding:2px 8px;border-radius:4px;font-size:11px;background:{'rgba(34,197,94,0.1)' if s['status'] == 'completed' else 'rgba(239,68,68,0.1)'};color:{'#22c55e' if s['status'] == 'completed' else '#ef4444'}'>{s['status']}</span></td>"
-        f"<td style='padding:8px;border-bottom:1px solid #1e2d45;color:#e2e8f0;font-size:13px;text-align:center'>{s['finding_count']}</td></tr>"
-        for s in step_summaries
+        f"<tr><td style='padding:8px;border-bottom:1px solid #1e2d45;color:#e2e8f0;font-size:13px'>{ss['step']}</td>"
+        f"<td style='padding:8px;border-bottom:1px solid #1e2d45;color:#64748b;font-size:12px'>{ss['type']}</td>"
+        f"<td style='padding:8px;border-bottom:1px solid #1e2d45'><span style='padding:2px 8px;border-radius:4px;font-size:11px;background:{'rgba(34,197,94,0.1)' if ss['status'] == 'completed' else 'rgba(239,68,68,0.1)'};color:{'#22c55e' if ss['status'] == 'completed' else '#ef4444'}'>{ss['status']}</span></td>"
+        f"<td style='padding:8px;border-bottom:1px solid #1e2d45;color:#e2e8f0;font-size:13px;text-align:center'>{ss['finding_count']}</td></tr>"
+        for ss in step_summaries
     )
 
     html = f"""<!DOCTYPE html>

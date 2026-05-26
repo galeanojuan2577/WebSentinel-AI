@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import httpx
 
@@ -14,7 +14,7 @@ async def run_comprehensive_scan(
     include_subdomains: bool = True,
     include_cve: bool = True,
     include_dns: bool = True,
-    progress_callback: Optional[callable] = None,
+    progress_callback: Optional[Callable] = None,
 ) -> dict[str, Any]:
     from src.scanner.checks.cve import CVECheck
     from src.scanner.checks.dns import DNSCheck

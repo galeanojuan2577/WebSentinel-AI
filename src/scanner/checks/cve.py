@@ -79,7 +79,7 @@ class CVECheck(BaseCheck):
     async def _search_cve(self, tech: str, client: httpx.AsyncClient) -> list[dict]:
         try:
             kw = tech.lower().split("/")[0].split()[0]
-            params = {"keywordSearch": kw, "resultsPerPage": 5}
+            params: dict[str, str | int] = {"keywordSearch": kw, "resultsPerPage": 5}
             resp = await client.get(self.nvd_api, params=params, timeout=20.0)
             if resp.status_code != 200:
                 return []

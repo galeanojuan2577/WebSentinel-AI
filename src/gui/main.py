@@ -5,7 +5,7 @@ import queue
 import threading
 from datetime import datetime
 
-import FreeSimpleGUI as sg
+import FreeSimpleGUI as sg  # type: ignore[import-untyped]
 
 from src.scanner.engine import ScanEngine
 from src.scanner.models import ScanTarget

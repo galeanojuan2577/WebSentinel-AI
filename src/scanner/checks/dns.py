@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import socket
+from typing import Any
 
 import httpx
 
@@ -26,7 +27,7 @@ class DNSCheck(BaseCheck):
             pass
 
     async def run(self, url: str, client: httpx.AsyncClient) -> list[CheckResult]:
-        results = []
+        results: list[CheckResult] = []
         domain = self._extract_domain(url)
         if not domain:
             return results
@@ -100,7 +101,7 @@ class DNSCheck(BaseCheck):
             addrs = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: socket.getaddrinfo(domain, 80, socket.AF_INET)
             )
-            return list(set(addr[4][0] for addr in addrs))
+            return list(set(str(addr[4][0]) for addr in addrs))
         except socket.gaierror:
             return []
         except Exception as e:
@@ -117,8 +118,9 @@ class DNSCheck(BaseCheck):
                 resolver.timeout = 5.0
                 resolver.lifetime = 10.0
                 qtype = getattr(dns.rdatatype, rectype, dns.rdatatype.A)
-                answers = await asyncio.get_event_loop().run_in_executor(
-                    None, lambda rt=qtype: resolver.resolve(domain, rt)
+                answers: Any = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda rt=qtype: resolver.resolve(domain, rt),  # type: ignore[misc]
                 )
                 result[rectype] = [str(r) for r in answers[:5]]
             except Exception:

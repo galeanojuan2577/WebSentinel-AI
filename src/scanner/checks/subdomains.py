@@ -66,7 +66,7 @@ class SubdomainCheck(BaseCheck):
         self.wordlist = wordlist or self.COMMON_SUBDOMAINS
 
     async def run(self, url: str, client: httpx.AsyncClient) -> list[CheckResult]:
-        results = []
+        results: list[CheckResult] = []
         domain = self._extract_domain(url)
         if not domain:
             return results
@@ -152,7 +152,7 @@ class SubdomainCheck(BaseCheck):
         return url.split("/")[0].split(":")[0]
 
     async def _search_crtsh(self, domain: str, client: httpx.AsyncClient) -> dict[str, str]:
-        discovered = {}
+        discovered: dict[str, str] = {}
         resp = await client.get(
             f"https://crt.sh/?q=%25.{domain}&output=json",
             timeout=20.0,
@@ -177,7 +177,7 @@ class SubdomainCheck(BaseCheck):
         return discovered
 
     async def _brute_verify(self, domain: str) -> dict[str, str]:
-        discovered = {}
+        discovered: dict[str, str] = {}
         sem = asyncio.Semaphore(10)
 
         async def check(sub: str) -> tuple[str, str | None]:
@@ -200,7 +200,7 @@ class SubdomainCheck(BaseCheck):
                 None, lambda: socket.getaddrinfo(hostname, 80, socket.AF_INET)
             )
             if addrs:
-                return addrs[0][4][0]
+                return str(addrs[0][4][0])
         except (socket.gaierror, OSError):
             pass
         return None

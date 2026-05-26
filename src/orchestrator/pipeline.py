@@ -6,7 +6,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from pydantic import BaseModel, Field
 
@@ -89,7 +89,7 @@ pipeline_tasks: dict[str, asyncio.Task] = {}
 async def _run_step(
     step: StepResult,
     target: str,
-    broadcast: callable,
+    broadcast: Callable,
     previous_result: Optional[StepResult] = None,
 ) -> None:
     step.status = StepStatus.RUNNING
@@ -123,9 +123,9 @@ async def _run_step(
         elif step.step_type == StepType.LINK_SCAN:
             from src.scanner.comprehensive import run_comprehensive_scan
 
-            result = await run_comprehensive_scan(target)
-            step.result = result
-            findings = result.get("findings", [])
+            link_result = await run_comprehensive_scan(target)
+            step.result = link_result
+            findings = link_result.get("findings", [])
             step.finding_count = len(findings)
             step.high_finding_count = sum(1 for f in findings if f.get("severity") in ("critical", "high"))
 
@@ -220,7 +220,7 @@ async def _ai_gate_check(
     previous_step: StepResult,
     ollama: OllamaClient,
     target: str,
-    broadcast: callable,
+    broadcast: Callable,
 ) -> bool:
     context = previous_step.result or {}
     prompt = (
@@ -278,7 +278,7 @@ def _build_default_pipeline(target: str) -> list[PipelineStepConfig]:
 
 async def run_pipeline(
     request: PipelineRequest,
-    broadcast: callable,
+    broadcast: Callable,
     pipeline_id: Optional[str] = None,
     existing_state: Optional[PipelineState] = None,
 ) -> str:
