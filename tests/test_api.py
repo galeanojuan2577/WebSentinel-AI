@@ -3,8 +3,8 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from src.api.database import init_db
 from src.api.auth import ensure_default_user
+from src.api.database import init_db
 from src.api.main import app
 
 
