@@ -1,0 +1,25 @@
+services:
+  api:
+    build: .
+    container_name: vulnscout-api
+    ports:
+      - "8000:8000"
+    environment:
+      - SCANNER_TIMEOUT=30
+      - SCANNER_MAX_REDIRECTS=5
+      - SCANNER_USER_AGENT=VulnScout/0.1
+      - SCANNER_RATE_LIMIT=10
+    restart: unless-stopped
+
+  web:
+    image: node:22-alpine
+    container_name: vulnscout-web
+    working_dir: /app
+    volumes:
+      - ./web:/app
+    ports:
+      - "5173:5173"
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - api
+    restart: unless-stopped
